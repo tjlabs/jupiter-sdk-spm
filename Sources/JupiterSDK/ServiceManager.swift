@@ -202,7 +202,7 @@ public class ServiceManager: Observation {
     public var displayOutput = ServiceResult()
     
     var nowTime: Int = 0
-    var RECENT_THRESHOLD: Int = 10000 // 2200
+    var RECENT_THRESHOLD: Int = 10000
     var INDEX_THRESHOLD: Int = 6
     
     var lastOsrId: Int = 0
