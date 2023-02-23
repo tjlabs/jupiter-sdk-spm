@@ -197,6 +197,9 @@ public class UnitDRGenerator: NSObject {
         pdrQueue.append(data)
     }
     
+    public func setVelocityScaleFactor(scaleFactor: Double) {
+        self.drDistanceEstimator.velocityScaleFactor = scaleFactor
+    }
     
     func getCurrentTimeInMilliseconds() -> Double
     {
