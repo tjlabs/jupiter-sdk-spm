@@ -83,12 +83,13 @@ public class ServiceManager: Observation {
     
     var user_id: String = ""
     var sector_id: Int = 0
+    var sectorIdOrigin: Int = 0
     var service: String = ""
     var mode: String = ""
     var runMode: String = ""
     
-    var deviceModel: String = ""
-    var os: String = ""
+    var deviceModel: String = "Unknown"
+    var os: String = "Unknown"
     var osVersion: Int = 0
     
     var Road = [String: [[Double]]]()
@@ -187,24 +188,18 @@ public class ServiceManager: Observation {
     var preOutputMobileTime: Int = 0
     var preUnitHeading: Double = 0
     
-    var floorUpdateRequestTimeStack: Double = 0
-    var floorUpdateRequestFlag: Bool = true
-    let FLOOR_UPDATE_REQUEST_TIME: Double = 15
-    
     public var displayOutput = ServiceResult()
     
     var nowTime: Int = 0
     var RECENT_THRESHOLD: Int = 10000 // 2200
     var INDEX_THRESHOLD: Int = 11
     let VALID_BL_CHANGE_TIME = 15000
+    let VALID_BL_CHANGE_TIME_SAME_SPOT = 5000
     
     var lastOsrId: Int = 0
-    var lastOsrTime: Int = 0
-    var runOsrTime: Int = 0
+    var buildingLevelChangedTime: Int = 0
     var travelingOsrDistance: Double = 0
     var distanceAfterPhase1: Double = 0
-    
-    var serviceStartTime: Int = 0
     
     var isGetFirstResponse: Bool = false
     var indexAfterResponse: Int = 0
@@ -269,26 +264,32 @@ public class ServiceManager: Observation {
     var currentLevel: String = "0F"
     var currentSpot: Int = 0
     
+    var buildingBuffer = [String]()
+    var levelBuffer = [String]()
+    
     var isMapMatching: Bool = false
     
     var isActiveService: Bool = true
     var isActiveRF: Bool = true
+    var isEmptyRF: Bool = false
     var isAnswered: Bool = false
     var isFirstStart: Bool = true
     var isActiveKf: Bool = false
     var isActiveReturn: Bool = true
     var isStop: Bool = true
+    var isEntered: Bool = false
+    var phase4Count: Int = 0
     
     var timeActiveRF: Double = 0
     var timeActiveUV: Double = 0
+    var timeEmptyRF: Double = 0
     var timeRequest: Double = 0
     var timePhaseChange: Double = 0
     var timeSleepRF: Double = 0
     var timeSleepUV: Double = 0
-    var phaseUnstableCount: Double = 0
     let STOP_THRESHOLD: Double = 2
     let SLEEP_THRESHOLD: Double = 600 // 10분
-    let SLEEP_THRESHOLD_RF: Double = 6 // 2s
+    let SLEEP_THRESHOLD_RF: Double = 8 // 8s
     
     var lastTrackingTime: Int = 0
     var lastResult = FineLocationTrackingResult()
@@ -398,8 +399,10 @@ public class ServiceManager: Observation {
         var isSuccess: Bool = true
         var message: String = log
         
-        self.user_id = id
+        self.sectorIdOrigin = sector_id
         self.sector_id = sector_id
+        
+        self.user_id = id
         self.service = service
         self.mode = mode
         
@@ -518,7 +521,7 @@ public class ServiceManager: Observation {
                                     let levelName = levelList![j]
                                     let key: String = "\(buildingName)_\(levelName)"
 
-                                    let url = "https://storage.googleapis.com/\(IMAGE_URL)/pp/\(self.sector_id)/\(key).csv"
+                                    let url = "https://storage.googleapis.com/\(IMAGE_URL)/pp/\(self.sectorIdOrigin)/\(key).csv"
                                     let urlComponents = URLComponents(string: url)
                                     let requestURL = URLRequest(url: (urlComponents?.url)!)
                                     let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
@@ -529,7 +532,6 @@ public class ServiceManager: Observation {
                                                 if let utf8Text = String(data: responseData, encoding: .utf8) {
                                                     ( self.Road[key], self.RoadHeading[key] ) = self.parseRoad(data: utf8Text)
 //                                                    self.AbnormalArea[key] = self.loadAbnormalArea(buildingName: buildingName, levelName: levelName)
-                                                    
                                                     self.isMapMatching = true
                                                     
                                                     let log: String = localTime + " , (Jupiter) Success : Load \(buildingName) \(levelName) Path-Point"
@@ -558,7 +560,6 @@ public class ServiceManager: Observation {
                     }
                 }
             })
-            self.serviceStartTime = getCurrentTimeInMilliseconds()
             self.loadRssiBias(sector_id: self.sector_id)
             
             return (isSuccess, message)
@@ -889,24 +890,23 @@ public class ServiceManager: Observation {
         }
         
         if (userVelocityTimer == nil && self.service == "FLT") {
-            floorUpdateRequestFlag = true
             userVelocityTimer = Timer.scheduledTimer(timeInterval: UVD_INTERVAL, target: self, selector: #selector(self.userVelocityTimerUpdate), userInfo: nil, repeats: true)
-            RunLoop.current.add(userVelocityTimer!, forMode: .common)
+            RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
          
         if (requestTimer == nil && self.service == "FLT") {
             requestTimer = Timer.scheduledTimer(timeInterval: RQ_INTERVAL, target: self, selector: #selector(self.requestTimerUpdate), userInfo: nil, repeats: true)
-            RunLoop.current.add(requestTimer!, forMode: .common)
+            RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
         
         if (updateTimer == nil && self.service == "FLT") {
             updateTimer = Timer.scheduledTimer(timeInterval: UPDATE_INTERVAL, target: self, selector: #selector(self.outputTimerUpdate), userInfo: nil, repeats: true)
-            RunLoop.current.add(updateTimer!, forMode: .common)
+            RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
         
         if (osrTimer == nil && self.service == "FLT") {
             osrTimer = Timer.scheduledTimer(timeInterval: OSR_INTERVAL, target: self, selector: #selector(self.osrTimerUpdate), userInfo: nil, repeats: true)
-            RunLoop.current.add(osrTimer!, forMode: .common)
+            RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
     }
     
@@ -917,7 +917,6 @@ public class ServiceManager: Observation {
         }
         
         if (userVelocityTimer != nil) {
-            floorUpdateRequestFlag = false
             userVelocityTimer!.invalidate()
             userVelocityTimer = nil
         }
@@ -951,7 +950,7 @@ public class ServiceManager: Observation {
     func wakeUpFromSleepMode() {
         if (self.updateTimer == nil && self.service == "FLT") {
             self.updateTimer = Timer.scheduledTimer(timeInterval: UPDATE_INTERVAL, target: self, selector: #selector(self.outputTimerUpdate), userInfo: nil, repeats: true)
-            RunLoop.current.add(updateTimer!, forMode: .common)
+            RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
     }
     
@@ -970,7 +969,7 @@ public class ServiceManager: Observation {
     }
     
     @objc func outputTimerUpdate() {
-        if (self.isActiveReturn) {
+        if (self.isActiveReturn && self.isActiveService) {
             let currentTime = getCurrentTimeInMilliseconds()
             self.outputResult.mobile_time = currentTime
             
@@ -987,12 +986,14 @@ public class ServiceManager: Observation {
         let bleCheckTime = Double(currentTime)
         let discoveredTime = bleManager.bleDiscoveredTime
         let diffBleTime = (bleCheckTime - discoveredTime)*1e-3
-
+//        print(getLocalTimeString() + " , (Jupiter) RFD : \(bleDictionary)")
         if (!bleDictionary.isEmpty) {
             self.timeActiveRF = 0
             self.timeSleepRF = 0
+            self.timeEmptyRF = 0
             
             self.isActiveRF = true
+            self.isEmptyRF = false
             self.isActiveService = true
             
             self.wakeUpFromSleepMode()
@@ -1029,6 +1030,20 @@ public class ServiceManager: Observation {
         }
     }
     
+    func checkStrongRfd(bleDict: [String: Double]) -> Bool {
+        var count = 0
+        for value in bleDict.values {
+            if value >= -85 {
+                count += 1
+                if count >= 2 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    
     @objc func userVelocityTimerUpdate() {
         let currentTime = getCurrentTimeInMilliseconds()
         let localTime = getLocalTimeString()
@@ -1052,8 +1067,6 @@ public class ServiceManager: Observation {
             self.isStop = false
             self.isActiveService = true
             
-            self.travelingOsrDistance += unitDRInfo.length
-            
             displayOutput.isIndexChanged = unitDRInfo.isIndexChanged
             displayOutput.indexTx = unitDRInfo.index
             displayOutput.length = unitDRInfo.length
@@ -1063,9 +1076,11 @@ public class ServiceManager: Observation {
                 let autoMode = unitDRInfo.autoMode
                 if (autoMode == 0) {
                     self.runMode = "pdr"
+                    self.sector_id = self.sectorIdOrigin - 1
                     self.kalmanR = 0.5
                 } else {
                     self.runMode = "dr"
+                    self.sector_id = self.sectorIdOrigin
                     self.kalmanR = 6
                 }
                 setModeParam(mode: self.runMode, phase: self.phase)
@@ -1082,10 +1097,13 @@ public class ServiceManager: Observation {
                 if (self.isGetFirstResponse && self.runMode == "dr") {
                     let lastResult = self.lastResult
                     if (lastResult.building_name != "" && lastResult.level_name != "") {
+                        self.travelingOsrDistance += unitDRInfo.length
                         let resultBufferData = ResultIsUvdChanged(mobile_time: lastResult.mobile_time, building_name: lastResult.building_name, level_name: lastResult.level_name)
-                        self.lastResultBufferUvdChanged.append(resultBufferData)
-                        if (self.lastResultBufferUvdChanged.count > 100) {
-                            self.lastResultBufferUvdChanged.remove(at: 0)
+                        if (self.isActiveReturn) {
+                            self.lastResultBufferUvdChanged.append(resultBufferData)
+                            if (self.lastResultBufferUvdChanged.count > 210) {
+                                self.lastResultBufferUvdChanged.remove(at: 0)
+                            }
                         }
                     }
                 }
@@ -1137,9 +1155,6 @@ public class ServiceManager: Observation {
                     
                     NetworkManager.shared.putUserVelocity(url: UV_URL, input: inputUserVelocity, completion: { [self] statusCode, returnedString in
                         if (statusCode == 200) {
-                            floorUpdateRequestFlag = true
-                            floorUpdateRequestTimeStack = 0
-                            
                             self.pastTuResult = self.currentTuResult
                             self.indexSend = Int(returnedString) ?? 0
                             self.isAnswered = true
@@ -1155,179 +1170,7 @@ public class ServiceManager: Observation {
                 // Phase 4 Request
                 if (self.isAnswered && (self.phase == 4)) {
                     self.isAnswered = false
-                    
-                    self.nowTime = currentTime
-                    
-                    var requestBiasArray: [Int] = [self.rssiBias]
-                    if (self.isPossibleEstBias) {
-                        if (self.isBiasRequested) {
-                            requestBiasArray = [self.rssiBias]
-                        } else {
-                            requestBiasArray = self.rssiBiasArray
-                            self.biasRequestTime = currentTime
-                            self.isBiasRequested = true
-                        }
-                    }
-                    
-                    let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray)
-                    NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
-                        if (statusCode == 200) {
-                            let result = jsonToResult(json: returnedString)
-                            if (self.isBiasRequested) {
-                                let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
-                                if (biasCheckTime < 100) {
-                                    let resultEstRssiBias = estimateRssiBias(sccResult: result.scc, biasResult: result.rss_compensation, biasArray: self.rssiBiasArray)
-                                    
-                                    self.rssiBias = result.rss_compensation
-                                    let newBiasArray: [Int] = resultEstRssiBias.1
-                                    self.rssiBiasArray = newBiasArray
-                                    if (resultEstRssiBias.0) {
-                                        self.sccGoodBiasArray.append(result.rss_compensation)
-                                        if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
-                                            let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
-                                            self.sccGoodBiasArray.remove(at: 0)
-                                            self.rssiBias = biasAvg
-
-                                            self.saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
-                                        }
-                                    }
-                                    self.isBiasRequested = false
-                                    displayOutput.bias = self.rssiBias
-                                } else if (biasCheckTime > 3000) {
-                                    self.isBiasRequested = false
-                                }
-                            }
-                            
-//                            print(localTime + " , (Jupiter) Phase 4 Result : \(result)")
-                            if ((self.nowTime - result.mobile_time) <= RECENT_THRESHOLD) {
-                                if ((result.index - self.indexPast) < INDEX_THRESHOLD) {
-                                    if (result.mobile_time > self.preOutputMobileTime) {
-                                        if (result.phase == 4) {
-                                            if (self.isActiveReturn) {
-                                                self.isActiveKf = true
-                                                self.timeUpdateFlag = true
-                                            }
-                                        }
-                                        self.phase = result.phase
-                                        self.preOutputMobileTime = result.mobile_time
-                                        
-                                        if (self.isActiveKf && result.phase == 4) {
-                                            if (!(result.x == 0 && result.y == 0)) {
-                                                if (self.isPhaseBreak) {
-                                                    if (self.runMode == "pdr") {
-                                                        self.kalmanR = 0.5
-                                                    } else if (self.runMode == "dr") {
-                                                        self.kalmanR = 0.5
-                                                    }
-                                                    self.SQUARE_RANGE = self.SQUARE_RANGE_SMALL
-                                                    
-                                                    self.headingKalmanR = 1
-                                                    self.isPhaseBreak = false
-                                                }
-                                                
-                                                // Measurment Update
-                                                let diffIndex = abs(self.indexSend - result.index)
-                                                if (measurementUpdateFlag && (diffIndex<10)) {
-                                                    displayOutput.indexRx = result.index
-
-                                                    // Measurement Update 하기전에 현재 Time Update 위치를 고려
-                                                    var resultForMu = result
-                                                    resultForMu.absolute_heading = compensateHeading(heading: resultForMu.absolute_heading, mode: self.runMode)
-                                                    let resultCorrected = self.correct(building: resultForMu.building_name, level: resultForMu.level_name, x: resultForMu.x, y: resultForMu.y, heading: resultForMu.absolute_heading, tuXY: [self.pastTuResult.x, self.pastTuResult.y], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
-
-                                                    self.serverResult[0] = resultCorrected.xyh[0]
-                                                    self.serverResult[1] = resultCorrected.xyh[1]
-                                                    self.serverResult[2] = resultCorrected.xyh[2]
-                                                    
-                                                    let indexBuffer: [Int] = self.uvdIndexBuffer
-                                                    let tuBuffer: [[Double]] = self.tuResultBuffer
-                                                    
-                                                    var currentTuResult = self.currentTuResult
-                                                    var pastTuResult = self.pastTuResult
-                                                    if (currentTuResult.mobile_time != 0 && pastTuResult.mobile_time != 0) {
-                                                        var dx: Double = 0
-                                                        var dy: Double = 0
-                                                        var dh: Double = 0
-                                                        
-                                                        if let idx = indexBuffer.firstIndex(of: result.index) {
-                                                            if ( sqrt((dx*dx) + (dy*dy)) < 15 ) {
-                                                                dx = currentTuResult.x - tuBuffer[idx][0]
-                                                                dy = currentTuResult.y - tuBuffer[idx][1]
-                                                                currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
-                                                                let tuBufferHeading = compensateHeading(heading: tuBuffer[idx][2], mode: self.runMode)
-                                                                
-                                                                dh = currentTuResult.absolute_heading - tuBufferHeading
-                                                            } else {
-                                                                dx = currentTuResult.x - pastTuResult.x
-                                                                dy = currentTuResult.y - pastTuResult.y
-                                                                currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
-                                                                pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading, mode: self.runMode)
-                                                                
-                                                                dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
-                                                            }
-                                                        } else {
-                                                            dx = currentTuResult.x - pastTuResult.x
-                                                            dy = currentTuResult.y - pastTuResult.y
-                                                            currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
-                                                            pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading, mode: self.runMode)
-                                                            
-                                                            dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
-                                                        }
-                                                        
-                                                        
-                                                        resultForMu.x = resultCorrected.xyh[0] + dx
-                                                        resultForMu.y = resultCorrected.xyh[1] + dy
-                                                        if (self.isNeedHeadingCorrection) {
-                                                            resultForMu.absolute_heading = resultCorrected.xyh[2] + dh
-                                                        } else {
-                                                            resultForMu.absolute_heading = resultForMu.absolute_heading + dh
-                                                            resultForMu.absolute_heading = self.compensateHeading(heading: resultForMu.absolute_heading, mode: self.runMode)
-                                                        }
-                                                    }
-                                                    
-                                                    let muOutput = measurementUpdate(timeUpdatePosition: timeUpdatePosition, serverOutputHat: resultForMu, originalResult: resultCorrected.xyh, isNeedHeadingCorrection: self.isNeedHeadingCorrection, mode: self.runMode)
-                                                    var muResult = fromServerToResult(fromServer: muOutput, velocity: displayOutput.velocity)
-                                                    muResult.mobile_time = result.mobile_time
-                                                    
-                                                    if (muResult.building_name != self.currentBuilding || muResult.level_name != self.currentLevel) {
-                                                        if ((muResult.mobile_time - self.runOsrTime) > VALID_BL_CHANGE_TIME) {
-//                                                            print(getLocalTimeString() + " , (Jupiter) Phase 4 BLC Satisfied !! \(muResult.mobile_time) // \(self.runOsrTime)")
-//                                                            print(getLocalTimeString() + " , (Jupiter) Phase 4 BLC Satisfied !! \(result.building_name) , \(result.level_name) //  \(self.currentBuilding) , \(self.currentLevel)")
-                                                            self.currentBuilding = muResult.building_name
-                                                            self.currentLevel = muResult.level_name
-                                                            
-                                                            muResult.building_name = muResult.building_name
-                                                            muResult.level_name = muResult.level_name
-                                                        } else {
-                                                            muResult.building_name = self.currentBuilding
-                                                            muResult.level_name = self.currentLevel
-                                                        }
-                                                    }
-
-                                                    self.flagPast = false
-                                                    self.outputResult = muResult
-                                                    
-                                                    timeUpdatePositionInit(serverOutput: muOutput)
-                                                }
-                                            }
-                                        } else if (self.isActiveKf) {
-                                            self.SQUARE_RANGE = self.SQUARE_RANGE_LARGE
-                                                
-                                            self.kalmanR = 0.01
-                                            self.headingKalmanR = 0.01
-                                            
-                                            self.distanceAfterPhase1 = 0
-                                            self.isPhaseBreak = true
-                                        }
-                                    }
-                                }
-                                self.indexPast = result.index
-                            }
-                        } else {
-                            let log: String = localTime + " , (Jupiter) Error : Fail to request indoor position in Phase 4"
-                            print(log)
-                        }
-                    })
+                    processPhase4(currentTime: currentTime, localTime: localTime)
                 }
             }
         } else {
@@ -1356,212 +1199,417 @@ public class ServiceManager: Observation {
         if (self.isActiveService) {
             if (!self.isStop) {
                 if (self.phase == 2) {
-                    let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: [self.rssiBias])
-                    NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
-                        if (statusCode == 200) {
-                            let result = jsonToResult(json: returnedString)
-                            if (result.x != 0 && result.y != 0) {
-                                if (result.mobile_time > self.preOutputMobileTime) {
-                                    self.preOutputMobileTime = result.mobile_time
-                                    self.phase = result.phase
-                                    self.currentBuilding = result.building_name
-                                    self.currentLevel = result.level_name
-                                    
-                                    self.timeUpdateOutput.building_name = result.building_name
-                                    self.timeUpdateOutput.level_name = result.level_name
-                                    
-                                    self.measurementOutput.building_name = result.building_name
-                                    self.measurementOutput.level_name = result.level_name
-                                    
-                                    displayOutput.indexRx = result.index
-                                    
-                                    let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
-                                    self.outputResult = finalResult
-                                    
-                                    self.serverResult[0] = result.x
-                                    self.serverResult[1] = result.y
-                                    self.serverResult[2] = result.absolute_heading
-                                    
-                                    self.indexPast = result.index
-//                                    print(localTime + " , (Jupiter) OSR : Phase 2 Result = \(result.phase)")
-//                                    print(localTime + " , (Jupiter) OSR : Phase 2 Result = \(result.building_name) , \(result.level_name) // \(self.currentBuilding) , \(self.currentLevel)")
-                                }
-                            } else {
-                                if (!self.isActiveRF) {
-                                    self.lastResultBufferUvdChanged = [Any]()
-                                    
-                                    self.isActiveKf = false
-                                    self.timeUpdateFlag = false
-                                    self.isActiveReturn = false
-                                    self.isGetFirstResponse = false
-                                    self.indexAfterResponse = 0
-                                    self.lastOsrId = 0
-                                    
-                                    self.phase = result.phase
-                                    self.preOutputMobileTime = getCurrentTimeInMilliseconds()
-                                    
-                                    displayOutput.phase = String(result.phase)
-                                    self.currentBuilding = ""
-                                    self.currentLevel = ""
-                                    
-//                                    print(localTime + " , (Jupiter) Not in Service Area")
-                                }
-                            }
-                        } else {
-                            let log: String = localTime + " , (Jupiter) Error : Fail to request indoor position in Phase 2"
-                            print(log)
-                        }
-                    })
+                    processPhase2(currentTime: currentTime, localTime: localTime)
                 } else if (self.phase < 4) {
                     // Phase 1 ~ 3
-                    var requestBiasArray: [Int] = [self.rssiBias]
-                    if (self.isPossibleEstBias) {
-                        if (self.isBiasRequested) {
-                            requestBiasArray = [self.rssiBias]
-                        } else {
-                            if (!isActiveKf) {
-                                requestBiasArray = self.rssiBiasArray
-                                self.biasRequestTime = currentTime
-                                self.isBiasRequested = true
-                            } else if (self.phase > 2) {
-                                requestBiasArray = self.rssiBiasArray
-                                self.biasRequestTime = currentTime
-                                self.isBiasRequested = true
-                            } else {
-                                requestBiasArray = [self.rssiBias]
-                            }
-                        }
-                    }
-                    
-                    let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray)
-//                    print(localTime + " , (Jupiter) Phase 1~3 Input : \(input)")
-                    NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
-                        if (statusCode == 200) {
-                            let result = jsonToResult(json: returnedString)
-                            if (result.x != 0 && result.y != 0) {
-//                                print(localTime + " , (Jupiter) Phase 1~3 Result : \(result)")
-                                if (self.isBiasRequested) {
-                                    let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
-                                    if (biasCheckTime < 100) {
-                                        let resultEstRssiBias = estimateRssiBias(sccResult: result.scc, biasResult: result.rss_compensation, biasArray: self.rssiBiasArray)
-                                        self.rssiBias = result.rss_compensation
-                                        let newBiasArray: [Int] = resultEstRssiBias.1
-                                        self.rssiBiasArray = newBiasArray
-                                        
-                                        if (resultEstRssiBias.0) {
-                                            self.sccGoodBiasArray.append(result.rss_compensation)
-                                            if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
-                                                let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
-                                                self.sccGoodBiasArray.remove(at: 0)
-                                                self.rssiBias = biasAvg
-
-                                                self.saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
-                                            }
-                                        }
-                                        
-                                        self.isBiasRequested = false
-                                        displayOutput.bias = self.rssiBias
-                                    } else if (biasCheckTime > 3000) {
-                                        self.isBiasRequested = false
-                                    }
-                                }
-                                
-                                if (result.mobile_time > self.preOutputMobileTime) {
-                                    if (!self.isGetFirstResponse) {
-                                        self.isGetFirstResponse = true
-                                        self.isActiveReturn = true
-//                                        print(localTime + " , (Jupiter) Get First Response !!")
-                                    }
-                                    
-                                    self.preOutputMobileTime = result.mobile_time
-                                    displayOutput.indexRx = result.index
-                                    self.phase = result.phase
-                                    
-                                    var resultCorrected = self.correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
-                                    resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
-                                    
-                                    self.serverResult[0] = resultCorrected.xyh[0]
-                                    self.serverResult[1] = resultCorrected.xyh[1]
-                                    self.serverResult[2] = resultCorrected.xyh[2]
-                                    
-                                    if (!self.isActiveKf) {
-                                        if (result.phase == 4) {
-                                            self.timeUpdatePosition.x = resultCorrected.xyh[0]
-                                            self.timeUpdatePosition.y = resultCorrected.xyh[1]
-                                            self.timeUpdatePosition.heading = resultCorrected.xyh[2]
-                                            
-                                            self.timeUpdateOutput.x = resultCorrected.xyh[0]
-                                            self.timeUpdateOutput.y = resultCorrected.xyh[1]
-                                            self.timeUpdateOutput.absolute_heading = resultCorrected.xyh[2]
-                                            
-                                            self.outputResult.x = resultCorrected.xyh[0]
-                                            self.outputResult.y = resultCorrected.xyh[1]
-                                            self.outputResult.absolute_heading = resultCorrected.xyh[2]
-//                                            print(localTime + " , (Jupiter) Enter the Kalman Filter")
-                                            self.isActiveKf = true
-                                        }
-                                        
-                                        let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
-                                        self.currentBuilding = finalResult.building_name
-                                        self.currentLevel = finalResult.level_name
-                                        
-                                        self.flagPast = false
-                                        self.outputResult = finalResult
-                                    } else {
-//                                        print(localTime + " , (Jupiter) Phase 3 Result (In KF): \(result)")
-                                        // Kalman Filter가 동작 중이면서 위치 요청시 input의 phase 가 1~3 인 경우
-                                        if (result.phase == 4) {
-                                            if (resultCorrected.isSuccess) {
-                                                self.updateAllResult(result: resultCorrected.xyh)
-                                            }
-                                        } else if (result.phase == 3 && result.scc >= 0.6) {
-                                            if (self.distanceAfterPhase1 >= 30 && resultCorrected.isSuccess) {
-                                                self.updateAllResult(result: resultCorrected.xyh)
-                                            }
-                                        }
-                                        var timUpdateOutputCopy = self.timeUpdateOutput
-                                        timUpdateOutputCopy.phase = result.phase
-                                        
-                                        if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
-                                            if ((result.mobile_time - self.runOsrTime) > VALID_BL_CHANGE_TIME) {
-//                                                print(getLocalTimeString() + " , (Jupiter) Phase 1~3 BLC Satisfied !! \(result.mobile_time) // \(self.runOsrTime)")
-//                                                print(getLocalTimeString() + " , (Jupiter) Phase 1~3 BLC Satisfied !! \(result.building_name) , \(result.level_name) //  \(self.currentBuilding) , \(self.currentLevel)")
-                                                self.currentBuilding = result.building_name
-                                                self.currentLevel = result.level_name
-                                                
-                                                timUpdateOutputCopy.building_name = result.building_name
-                                                timUpdateOutputCopy.level_name = result.level_name
-                                            } else {
-                                                timUpdateOutputCopy.building_name = self.currentBuilding
-                                                timUpdateOutputCopy.level_name = self.currentLevel
-                                            }
-                                            timUpdateOutputCopy.mobile_time = result.mobile_time
-                                        }
-                                        
-                                        let updatedResult = fromServerToResult(fromServer: timUpdateOutputCopy, velocity: displayOutput.velocity)
-                                        self.timeUpdateOutput = timUpdateOutputCopy
-
-                                        self.flagPast = false
-                                        self.outputResult = updatedResult
-//                                        print(localTime + " , (Jupiter) Phase 3 Result -> To Output (In KF): \(updatedResult)")
-                                    }
-                                    self.indexPast = result.index
-                                }
-                            } else {
-                                self.phase = result.phase
-                            }
-                        } else {
-                            let log: String = localTime + " , (Jupiter) Error : Fail to request indoor position in Phase 3"
-                            print(log)
-                        }
-                    })
+                    processPhaseUnder3(currentTime: currentTime, localTime: localTime)
                 }
             }
         }
     }
     
+    private func processPhase2(currentTime: Int, localTime: String) {
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: [self.rssiBias])
+//        print(localTime + " , (Jupiter) OSR : Phase 2 Input = \(input)")
+        NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
+            if (statusCode == 200) {
+                let result = jsonToResult(json: returnedString)
+                if (result.x != 0 && result.y != 0) {
+                    if (result.mobile_time > self.preOutputMobileTime) {
+                        self.preOutputMobileTime = result.mobile_time
+                        self.phase = result.phase
+                        self.currentBuilding = result.building_name
+                        self.currentLevel = result.level_name
+                        
+                        self.timeUpdateOutput.building_name = result.building_name
+                        self.timeUpdateOutput.level_name = result.level_name
+                        
+                        self.measurementOutput.building_name = result.building_name
+                        self.measurementOutput.level_name = result.level_name
+                        
+                        displayOutput.indexRx = result.index
+                        
+                        let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
+                        self.outputResult = finalResult
+                        
+                        self.serverResult[0] = result.x
+                        self.serverResult[1] = result.y
+                        self.serverResult[2] = result.absolute_heading
+                        
+                        self.indexPast = result.index
+//                        print(localTime + " , (Jupiter) OSR : Phase 2 Result = \(result.building_name) , \(result.level_name) // \(self.currentBuilding) , \(self.currentLevel)")
+                    }
+                } else {
+//                    print(localTime + " , (Jupiter) OSR : Phase 2 Result (else) = \(result) // isEntered = \(self.isEntered)")
+                    if (!self.isActiveRF) {
+                        self.lastResultBufferUvdChanged = [Any]()
+                        
+                        self.isActiveKf = false
+                        self.timeUpdateFlag = false
+                        self.isActiveReturn = false
+                        self.isGetFirstResponse = false
+                        self.indexAfterResponse = 0
+                        self.lastOsrId = 0
+                        self.phase4Count = 0
+                        
+                        self.phase = result.phase
+                        self.preOutputMobileTime = getCurrentTimeInMilliseconds()
+                        
+                        displayOutput.phase = String(result.phase)
+                        self.currentBuilding = ""
+                        self.currentLevel = ""
+                        
+                        self.isEntered = false
+                        print(localTime + " , (Jupiter) Not in Service Area")
+                    }
+                }
+            } else {
+                let log: String = localTime + " , (Jupiter) Error : Fail to request indoor position in Phase 2"
+                print(log)
+            }
+        })
+    }
+    
+    private func processPhaseUnder3(currentTime: Int, localTime: String) {
+        var requestBiasArray: [Int] = [self.rssiBias]
+        if (self.isPossibleEstBias) {
+            if (self.isBiasRequested) {
+                requestBiasArray = [self.rssiBias]
+            } else {
+                if (!isActiveKf) {
+                    requestBiasArray = self.rssiBiasArray
+                    self.biasRequestTime = currentTime
+                    self.isBiasRequested = true
+                } else if (self.phase > 2) {
+                    requestBiasArray = self.rssiBiasArray
+                    self.biasRequestTime = currentTime
+                    self.isBiasRequested = true
+                } else {
+                    requestBiasArray = [self.rssiBias]
+                }
+            }
+        }
+        
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray)
+//        print(localTime + " , (Jupiter) Phase 1~3 Input : \(input)")
+        NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
+            if (statusCode == 200) {
+                let result = jsonToResult(json: returnedString)
+                if (result.x != 0 && result.y != 0) {
+//                    print(localTime + " , (Jupiter) Phase 1~3 Result : \(result)")
+                    if (self.isBiasRequested) {
+                        let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
+                        if (biasCheckTime < 100) {
+                            let resultEstRssiBias = estimateRssiBias(sccResult: result.scc, biasResult: result.rss_compensation, biasArray: self.rssiBiasArray)
+                            self.rssiBias = result.rss_compensation
+                            let newBiasArray: [Int] = resultEstRssiBias.1
+                            self.rssiBiasArray = newBiasArray
+                            
+                            if (resultEstRssiBias.0) {
+                                self.sccGoodBiasArray.append(result.rss_compensation)
+                                if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
+                                    let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
+                                    self.sccGoodBiasArray.remove(at: 0)
+                                    self.rssiBias = biasAvg
+
+                                    self.saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
+                                }
+                            }
+                            
+                            self.isBiasRequested = false
+                            displayOutput.bias = self.rssiBias
+                        } else if (biasCheckTime > 3000) {
+                            self.isBiasRequested = false
+                        }
+                    }
+                    
+                    if (result.mobile_time > self.preOutputMobileTime) {
+                        if (!self.isGetFirstResponse) {
+                            self.isGetFirstResponse = true
+                            print(localTime + " , (Jupiter) Info : Get First Response")
+                        }
+                        
+                        if (!self.isActiveReturn) {
+                            let bleData = bleManager.bleAvg
+                            self.isActiveReturn = checkStrongRfd(bleDict: bleData)
+                            
+                        }
+                        
+                        self.preOutputMobileTime = result.mobile_time
+                        displayOutput.indexRx = result.index
+                        self.phase = result.phase
+                        
+                        var resultCorrected = self.correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+                        resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
+                        
+                        self.serverResult[0] = resultCorrected.xyh[0]
+                        self.serverResult[1] = resultCorrected.xyh[1]
+                        self.serverResult[2] = resultCorrected.xyh[2]
+                        
+                        if (!self.isActiveKf) {
+                            if (result.phase == 4) {
+                                self.phase4Count += 1
+                                if (self.phase4Count > 19) {
+                                    self.isEntered = true
+                                }
+                                
+                                self.timeUpdatePosition.x = resultCorrected.xyh[0]
+                                self.timeUpdatePosition.y = resultCorrected.xyh[1]
+                                self.timeUpdatePosition.heading = resultCorrected.xyh[2]
+                                
+                                self.timeUpdateOutput.x = resultCorrected.xyh[0]
+                                self.timeUpdateOutput.y = resultCorrected.xyh[1]
+                                self.timeUpdateOutput.absolute_heading = resultCorrected.xyh[2]
+                                
+                                self.outputResult.x = resultCorrected.xyh[0]
+                                self.outputResult.y = resultCorrected.xyh[1]
+                                self.outputResult.absolute_heading = resultCorrected.xyh[2]
+
+                                self.isActiveKf = true
+                            }
+                            
+                            let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
+                            self.currentBuilding = finalResult.building_name
+                            self.currentLevel = finalResult.level_name
+                            
+                            self.flagPast = false
+                            self.outputResult = finalResult
+                        } else {
+//                            print(localTime + " , (Jupiter) Phase 3 Result (In KF): \(result)")
+//                             Kalman Filter가 동작 중이면서 위치 요청시 input의 phase 가 1~3 인 경우
+                            if (result.phase == 4) {
+                                self.phase4Count += 1
+                                if (self.phase4Count > 19) {
+                                    self.isEntered = true
+//                                    print(localTime + "(Jupiter) Phase 3 Result : isEntered = true")
+                                }
+                                if (resultCorrected.isSuccess) {
+                                    self.updateAllResult(result: resultCorrected.xyh, flag: false)
+                                }
+                            } else if (result.phase == 3 && self.runMode == "dr") {
+                                if (self.distanceAfterPhase1 >= 30 && resultCorrected.isSuccess) {
+                                    self.updateAllResult(result: resultCorrected.xyh, flag: false)
+                                }
+                            } else if (result.phase == 3 && self.runMode == "pdr") {
+                                self.updateAllResult(result: resultCorrected.xyh, flag: false)
+                            }
+                            var timUpdateOutputCopy = self.timeUpdateOutput
+                            timUpdateOutputCopy.phase = result.phase
+                            
+                            if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
+                                if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
+                                    // Building Level 이 바뀐지 15초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                                    self.currentBuilding = result.building_name
+                                    self.currentLevel = result.level_name
+
+                                    timUpdateOutputCopy.building_name = result.building_name
+                                    timUpdateOutputCopy.level_name = result.level_name
+
+//                                    self.buildingLevelChangedTime = getCurrentTimeInMilliseconds()
+                                } else {
+                                    timUpdateOutputCopy.building_name = self.currentBuilding
+                                    timUpdateOutputCopy.level_name = self.currentLevel
+                                }
+                                timUpdateOutputCopy.mobile_time = result.mobile_time
+                            }
+                            
+                            let updatedResult = fromServerToResult(fromServer: timUpdateOutputCopy, velocity: displayOutput.velocity)
+                            self.timeUpdateOutput = timUpdateOutputCopy
+
+                            self.flagPast = false
+                            self.outputResult = updatedResult
+                        }
+                        self.indexPast = result.index
+                    }
+                } else {
+                    self.phase = result.phase
+                }
+            } else {
+                let log: String = localTime + " , (Jupiter) Error : Fail to request indoor position in Phase 3"
+                print(log)
+            }
+        })
+    }
+    
+    private func processPhase4(currentTime: Int, localTime: String) {
+        self.nowTime = currentTime
+        var requestBiasArray: [Int] = [self.rssiBias]
+        if (self.isPossibleEstBias) {
+            if (self.isBiasRequested) {
+                requestBiasArray = [self.rssiBias]
+            } else {
+                requestBiasArray = self.rssiBiasArray
+                self.biasRequestTime = currentTime
+                self.isBiasRequested = true
+            }
+        }
+
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray)
+        NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
+            if (statusCode == 200) {
+                let result = jsonToResult(json: returnedString)
+                if (self.isBiasRequested) {
+                    let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
+                    if (biasCheckTime < 100) {
+                        let resultEstRssiBias = estimateRssiBias(sccResult: result.scc, biasResult: result.rss_compensation, biasArray: self.rssiBiasArray)
+
+                        self.rssiBias = result.rss_compensation
+                        let newBiasArray: [Int] = resultEstRssiBias.1
+                        self.rssiBiasArray = newBiasArray
+                        if (resultEstRssiBias.0) {
+                            self.sccGoodBiasArray.append(result.rss_compensation)
+                            if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
+                                let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
+                                self.sccGoodBiasArray.remove(at: 0)
+                                self.rssiBias = biasAvg
+
+                                self.saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
+                            }
+                        }
+                        self.isBiasRequested = false
+                        displayOutput.bias = self.rssiBias
+                    } else if (biasCheckTime > 3000) {
+                        self.isBiasRequested = false
+                    }
+                }
+
+                if ((self.nowTime - result.mobile_time) <= RECENT_THRESHOLD) {
+                    if ((result.index - self.indexPast) < INDEX_THRESHOLD) {
+                        if (result.mobile_time > self.preOutputMobileTime) {
+                            if (result.phase == 4) {
+                                if (self.isActiveReturn) {
+                                    self.isActiveKf = true
+                                    self.timeUpdateFlag = true
+                                }
+                            }
+                            self.phase = result.phase
+                            self.preOutputMobileTime = result.mobile_time
+
+                            if (self.isActiveKf && result.phase == 4) {
+                                if (!(result.x == 0 && result.y == 0)) {
+                                    self.phase4Count += 1
+                                    if (self.phase4Count > 19) {
+                                        self.isEntered = true
+                                    }
+                                    if (self.isPhaseBreak) {
+                                        if (self.runMode == "pdr") {
+                                            self.kalmanR = 0.5
+                                        } else if (self.runMode == "dr") {
+                                            self.kalmanR = 0.5
+                                        }
+                                        self.SQUARE_RANGE = self.SQUARE_RANGE_SMALL
+
+                                        self.headingKalmanR = 1
+                                        self.isPhaseBreak = false
+                                    }
+
+                                    // Measurment Update
+                                    let diffIndex = abs(self.indexSend - result.index)
+                                    if (measurementUpdateFlag && (diffIndex<10)) {
+                                        displayOutput.indexRx = result.index
+
+                                        // Measurement Update 하기전에 현재 Time Update 위치를 고려
+                                        var resultForMu = result
+                                        resultForMu.absolute_heading = compensateHeading(heading: resultForMu.absolute_heading, mode: self.runMode)
+                                        let resultCorrected = self.correct(building: resultForMu.building_name, level: resultForMu.level_name, x: resultForMu.x, y: resultForMu.y, heading: resultForMu.absolute_heading, tuXY: [self.pastTuResult.x, self.pastTuResult.y], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+
+                                        self.serverResult[0] = resultCorrected.xyh[0]
+                                        self.serverResult[1] = resultCorrected.xyh[1]
+                                        self.serverResult[2] = resultCorrected.xyh[2]
+
+                                        let indexBuffer: [Int] = self.uvdIndexBuffer
+                                        let tuBuffer: [[Double]] = self.tuResultBuffer
+
+                                        var currentTuResult = self.currentTuResult
+                                        var pastTuResult = self.pastTuResult
+                                        if (currentTuResult.mobile_time != 0 && pastTuResult.mobile_time != 0) {
+                                            var dx: Double = 0
+                                            var dy: Double = 0
+                                            var dh: Double = 0
+
+                                            if let idx = indexBuffer.firstIndex(of: result.index) {
+                                                if ( sqrt((dx*dx) + (dy*dy)) < 15 ) {
+                                                    dx = currentTuResult.x - tuBuffer[idx][0]
+                                                    dy = currentTuResult.y - tuBuffer[idx][1]
+                                                    currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
+                                                    let tuBufferHeading = compensateHeading(heading: tuBuffer[idx][2], mode: self.runMode)
+
+                                                    dh = currentTuResult.absolute_heading - tuBufferHeading
+                                                } else {
+                                                    dx = currentTuResult.x - pastTuResult.x
+                                                    dy = currentTuResult.y - pastTuResult.y
+                                                    currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
+                                                    pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading, mode: self.runMode)
+
+                                                    dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
+                                                }
+                                            } else {
+                                                dx = currentTuResult.x - pastTuResult.x
+                                                dy = currentTuResult.y - pastTuResult.y
+                                                currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
+                                                pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading, mode: self.runMode)
+
+                                                dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
+                                            }
+
+
+                                            resultForMu.x = resultCorrected.xyh[0] + dx
+                                            resultForMu.y = resultCorrected.xyh[1] + dy
+                                            if (self.isNeedHeadingCorrection) {
+                                                resultForMu.absolute_heading = resultCorrected.xyh[2] + dh
+                                            } else {
+                                                resultForMu.absolute_heading = resultForMu.absolute_heading + dh
+                                                resultForMu.absolute_heading = self.compensateHeading(heading: resultForMu.absolute_heading, mode: self.runMode)
+                                            }
+                                        }
+
+                                        let muOutput = measurementUpdate(timeUpdatePosition: timeUpdatePosition, serverOutputHat: resultForMu, originalResult: resultCorrected.xyh, isNeedHeadingCorrection: self.isNeedHeadingCorrection, mode: self.runMode)
+                                        var muResult = fromServerToResult(fromServer: muOutput, velocity: displayOutput.velocity)
+                                        muResult.mobile_time = result.mobile_time
+
+                                        if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
+                                            if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
+                                                // Building Level 이 바뀐지 15초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                                                self.currentBuilding = result.building_name
+                                                self.currentLevel = result.level_name
+
+                                                muResult.building_name = result.building_name
+                                                muResult.level_name = result.level_name
+                                                
+//                                                self.buildingLevelChangedTime = getCurrentTimeInMilliseconds()
+                                            } else {
+                                                muResult.building_name = self.currentBuilding
+                                                muResult.level_name = self.currentLevel
+                                            }
+                                        }
+
+                                        self.flagPast = false
+                                        self.outputResult = muResult
+
+                                        timeUpdatePositionInit(serverOutput: muOutput)
+                                    }
+                                }
+                            } else if (self.isActiveKf) {
+                                self.SQUARE_RANGE = self.SQUARE_RANGE_LARGE
+
+                                self.kalmanR = 0.01
+                                self.headingKalmanR = 0.01
+
+                                self.distanceAfterPhase1 = 0
+                                self.isPhaseBreak = true
+                            }
+                        }
+                    }
+                    self.indexPast = result.index
+                }
+            } else {
+                let log: String = localTime + " , (Jupiter) Error : Fail to request indoor position in Phase 4"
+                print(log)
+            }
+        })
+    }
+    
     @objc func osrTimerUpdate() {
-        // self.runMode == "dr" && self.isGetFirstResponse
         if (self.isGetFirstResponse) {
             let currentTime = getCurrentTimeInMilliseconds()
             let input = OnSpotRecognition(user_id: self.user_id, mobile_time: currentTime, rss_compensation: self.rssiBias)
@@ -1573,62 +1621,15 @@ public class ServiceManager: Observation {
 //                        print(localTime + " , (Jupiter) OSR : Result = \(result)")
                         let isOnSpot = isOnSpotRecognition(result: result, level: self.currentLevel)
                         // Level Changed Check
-                        // true : Go to Phase 2
                         if (isOnSpot.isOn) {
 //                            print(localTime + " , (Jupiter) Spot On : \(isOnSpot) // currentLevel : \(self.currentLevel) // time : \(result.mobile_time)")
                             let levelDestination = isOnSpot.levelDestination + isOnSpot.levelDirection
-                            if (result.spot_id != self.lastOsrId) {
-                                // Different Spot Detected
-                                self.phase = 2
-                                self.currentBuilding = result.building_name
-                                self.currentLevel = levelDestination
-                                self.timeUpdateOutput.level_name = levelDestination
-                                self.measurementOutput.level_name = levelDestination
-                                self.outputResult.level_name = levelDestination
-                                self.currentSpot = result.spot_id
-
-                                self.lastOsrId = result.spot_id
-                                self.lastOsrTime = result.mobile_time
-                                self.runOsrTime = currentTime
-
-                                self.travelingOsrDistance = 0
-                                if (levelDestination == "") {
-                                    self.preOutputMobileTime = currentTime
-                                    self.isPossibleEstBias = false
-                                } else {
-                                    self.isActiveReturn = true
-                                    self.isPossibleEstBias = false
-                                }
-                                self.preOutputMobileTime = currentTime
-//                                print(localTime + " , (Jupiter) OSR : Different -> destinationLevel : \(levelDestination)")
-//                                print("----------------- Spot Level Changed (Same Spot) -------------------")
+                            if (levelDestination == "") {
+                                // Going Out
+                                determineSpotDetect(result: result, lastSpotId: self.lastOsrId, levelDestination: levelDestination, currentTime: currentTime)
                             } else {
-                                // Same Spot Detected
-                                if (self.travelingOsrDistance >= SAME_SPOT_DISTANCE) {
-                                    self.phase = 2
-                                    self.currentBuilding = result.building_name
-                                    self.currentLevel = levelDestination
-                                    self.timeUpdateOutput.level_name = levelDestination
-                                    self.measurementOutput.level_name = levelDestination
-                                    self.outputResult.level_name = levelDestination
-                                    self.currentSpot = result.spot_id
-
-                                    self.lastOsrId = result.spot_id
-                                    self.lastOsrTime = result.mobile_time
-                                    self.runOsrTime = currentTime
-
-                                    self.travelingOsrDistance = 0
-                                    if (levelDestination == "") {
-                                        self.preOutputMobileTime = currentTime
-                                        self.isPossibleEstBias = false
-                                    } else {
-                                        self.isActiveReturn = true
-                                        self.isPossibleEstBias = false
-                                    }
-                                    self.preOutputMobileTime = currentTime
-//                                    print(localTime + " , (Jupiter) OSR : Same -> destinationLevel : \(levelDestination) // Dist = \(self.travelingOsrDistance)")
-//                                    print("----------------- Spot Level Changed (Same Spot) -------------------")
-                                }
+                                // Normal
+                                determineSpotDetect(result: result, lastSpotId: self.lastOsrId, levelDestination: levelDestination, currentTime: currentTime)
                             }
                         }
                     }
@@ -1657,22 +1658,40 @@ public class ServiceManager: Observation {
         var levelDestination: String = ""
         
         if (linked_level_name == "") {
-            // Has In/Out Spot
-            if (self.lastResultBufferUvdChanged.count >= 90) {
-                // Going Out
+            if (!self.isEntered) {
+                // In & Out OSR
+                if (self.lastResultBufferUvdChanged.count >= 200) {
+                    // Going Out
+                    levelDestination = ""
+                    isOn = true
+//                    print(localTime + " , (Jupiter) Spot On : Out Detected (isEntered is false)")
+                } else {
+                    // Going In
+                    self.isEntered = true
+                    levelDestination = level_name
+                    isOn = true
+//                    print(localTime + " , (Jupiter) Spot On : In Detected")
+                }
+            } else {
                 levelDestination = ""
                 isOn = true
-            } else {
-                // Going In
-                levelDestination = level_name
-                isOn = true
+//                print(localTime + " , (Jupiter) Spot On : Out Detected (isEntered is true)")
             }
             return (isOn, levelDestination, "")
         } else {
+            if (levelArray[0] == levelArray[1]) {
+                isOn = false
+                self.isEntered = true
+                self.isActiveReturn = true
+//                print(localTime + " , (Jupiter) Spot On : Indoor Spot")
+                return (isOn, "", "")
+            }
+            // Normal OSR
             let currentLevel: String = level
             let levelNameCorrected: String = removeLevelDirectionString(levelName: currentLevel)
             for i in 0..<levelArray.count {
                 if levelArray[i] != levelNameCorrected {
+                    self.isEntered = true
                     levelDestination = levelArray[i]
                     isOn = true
                 }
@@ -1684,6 +1703,56 @@ public class ServiceManager: Observation {
             let levelDirection: String = checkLevelDirection(currentLevel: currentLevelNum, destinationLevel: destinationLevelNum)
             
             return (isOn, levelDestination, levelDirection)
+        }
+    }
+    
+    func determineSpotDetect(result: OnSpotRecognitionResult, lastSpotId: Int, levelDestination: String, currentTime: Int) {
+        let localTime = getLocalTimeString()
+        if (result.spot_id != lastSpotId) {
+            // Different Spot Detected
+            self.currentBuilding = result.building_name
+            self.currentLevel = levelDestination
+            
+            self.phase = 2
+            self.timeUpdateOutput.level_name = levelDestination
+            self.measurementOutput.level_name = levelDestination
+            self.outputResult.level_name = levelDestination
+            self.currentSpot = result.spot_id
+            self.lastOsrId = result.spot_id
+            self.travelingOsrDistance = 0
+            self.isPossibleEstBias = false
+            if (levelDestination == "") {
+                self.buildingLevelChangedTime = 0
+            } else {
+                self.buildingLevelChangedTime = currentTime
+                self.isActiveReturn = true
+            }
+            
+            self.preOutputMobileTime = currentTime
+//            print(localTime + " , (Jupiter) Spot On : Different Spot // levelDestination = \(levelDestination)")
+        } else {
+            // Same Spot Detected
+            if (self.travelingOsrDistance >= SAME_SPOT_DISTANCE) {
+                self.currentBuilding = result.building_name
+                self.currentLevel = levelDestination
+                
+                self.phase = 2
+                self.timeUpdateOutput.level_name = levelDestination
+                self.measurementOutput.level_name = levelDestination
+                self.outputResult.level_name = levelDestination
+                self.currentSpot = result.spot_id
+                self.lastOsrId = result.spot_id
+                self.travelingOsrDistance = 0
+                self.isPossibleEstBias = false
+                if (levelDestination == "") {
+                    self.buildingLevelChangedTime = 0
+                } else {
+                    self.buildingLevelChangedTime = currentTime
+                    self.isActiveReturn = true
+                }
+                self.preOutputMobileTime = currentTime
+//                print(localTime + " , (Jupiter) Spot On : Same Spot // levelDestination = \(levelDestination)")
+            }
         }
     }
     
@@ -1834,7 +1903,6 @@ public class ServiceManager: Observation {
             newBiasArray[1] = BIAS_RANGE_MAX - (2*biasRange)
         }
         
-//        print("(Estimate Bias) sccResult = \(sccResult) // biasResult = \(biasResult) // isSccHigh = \(isSccHigh) // biasArray = \(newBiasArray)")
         return (isSccHigh, newBiasArray)
     }
     
@@ -1995,26 +2063,29 @@ public class ServiceManager: Observation {
         return abnormalArea
     }
     
-    private func updateAllResult(result: [Double]) {
+    private func updateAllResult(result: [Double], flag: Bool) {
         self.timeUpdatePosition.x = result[0]
         self.timeUpdatePosition.y = result[1]
-        self.timeUpdatePosition.heading = result[2]
         
         self.timeUpdateOutput.x = result[0]
         self.timeUpdateOutput.y = result[1]
-        self.timeUpdatePosition.heading = result[2]
         
         self.measurementPosition.x = result[0]
         self.measurementPosition.y = result[1]
-        self.measurementPosition.heading = result[2]
         
         self.measurementOutput.x = result[0]
         self.measurementOutput.y = result[1]
-        self.measurementOutput.absolute_heading = result[2]
         
         self.outputResult.x = result[0]
         self.outputResult.y = result[1]
-        self.outputResult.absolute_heading = result[2]
+        
+        if (flag) {
+            self.timeUpdatePosition.heading = result[2]
+            self.timeUpdatePosition.heading = result[2]
+            self.measurementPosition.heading = result[2]
+            self.measurementOutput.absolute_heading = result[2]
+            self.outputResult.absolute_heading = result[2]
+        }
     }
     
     private func correct(building: String, level: String, x: Double, y: Double, heading: Double, tuXY: [Double], mode: String, isPast: Bool, HEADING_RANGE: Double) -> (isSuccess: Bool, xyh: [Double]) {
@@ -2291,10 +2362,11 @@ public class ServiceManager: Observation {
         timeUpdatePosition.heading = updateHeading
         
         var timeUpdateCopy = timeUpdatePosition
-        let correctedTuCopy = self.correct(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: self.mode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+        let correctedTuCopy = self.correct(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
         if (correctedTuCopy.isSuccess) {
             if (self.runMode == "pdr") {
-                
+                timeUpdateCopy.x = correctedTuCopy.xyh[0]
+                timeUpdateCopy.y = correctedTuCopy.xyh[1]
             } else {
                 timeUpdateCopy.x = correctedTuCopy.xyh[0]
                 timeUpdateCopy.y = correctedTuCopy.xyh[1]
@@ -2304,10 +2376,12 @@ public class ServiceManager: Observation {
             }
             timeUpdatePosition = timeUpdateCopy
         } else {
-            let correctedTuCopy = self.correct(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: "pdr", isPast: false, HEADING_RANGE: self.HEADING_RANGE)
-            timeUpdateCopy.x = correctedTuCopy.xyh[0]
-            timeUpdateCopy.y = correctedTuCopy.xyh[1]
-            timeUpdatePosition = timeUpdateCopy
+            if (self.runMode == "dr") {
+                let correctedTuCopy = self.correct(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: "pdr", isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+                timeUpdateCopy.x = correctedTuCopy.xyh[0]
+                timeUpdateCopy.y = correctedTuCopy.xyh[1]
+                timeUpdatePosition = timeUpdateCopy
+            }
         }
         
         kalmanP += kalmanQ
@@ -2348,7 +2422,6 @@ public class ServiceManager: Observation {
                 serverOutputHatMm.absolute_heading = serverOutputHatCopy.absolute_heading
             }
         } else {
-//            print(localTime + " , (Jupiter) Measurement Update: ServerOutputHatMm Fail")
             serverOutputHatMm.absolute_heading = originalResult[2]
         }
         
@@ -2406,7 +2479,6 @@ public class ServiceManager: Observation {
                 saveKalmanParam()
             }
         } else {
-//            print(localTime + " , (Jupiter) Measurement Update: measurementOutputCorrected Fail")
             // Use Server Result
             self.timeUpdatePosition.x = originalResult[0]
             self.timeUpdatePosition.y = originalResult[1]

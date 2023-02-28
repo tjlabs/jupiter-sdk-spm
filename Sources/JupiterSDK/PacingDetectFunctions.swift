@@ -46,7 +46,6 @@ public class PacingDetectFunctions: NSObject {
     }
     
     public func updateNormalStepCheckCount(accPeakQueue: LinkedList<TimestampDouble>, accValleyQueue: LinkedList<TimestampDouble>, normalStepCheckCount: Int) -> Int {
-        
         if (accPeakQueue.count <= 2 || accValleyQueue.count <= 2) {
             return normalStepCheckCount + 1
         }
@@ -55,10 +54,6 @@ public class PacingDetectFunctions: NSObject {
         guard let condition2 = accPeakQueue.node(at: accPeakQueue.count-2)?.value.timestamp else { return 0 }
         guard let condition3 = accPeakQueue.last?.value.valuestamp else { return 0 }
         guard let condition4 = accPeakQueue.node(at: accPeakQueue.count-2)?.value.valuestamp else { return 0 }
-        
-//        if (condition1 - condition2 < 2000 && abs(condition3 - condition4) < 1) {
-//            return normalStepCheckCount + 1
-//        }
         
         if (condition1 - condition2 < 2000) {
             return normalStepCheckCount + 1
@@ -88,6 +83,11 @@ public class PacingDetectFunctions: NSObject {
     }
     
     public func checkAutoModeLossStep(normalStepCountBuffer: LinkedList<Int>) -> Bool {
+        var checkString: String = ""
+        for i in 0..<normalStepCountBuffer.count {
+            checkString.append(String(normalStepCountBuffer.node(at: i)!.value))
+            checkString.append(" , ")
+        }
         if (normalStepCountBuffer.count < AUTO_MODE_NORMAL_STEP_LOSS_CHECK_SIZE) {
             return false
         } else {
@@ -97,7 +97,7 @@ public class PacingDetectFunctions: NSObject {
                     count += 1
                 }
             }
-            if count == (AUTO_MODE_NORMAL_STEP_LOSS_CHECK_SIZE-1) {
+            if count == AUTO_MODE_NORMAL_STEP_LOSS_CHECK_SIZE {
                 return true
             } else {
                 return false

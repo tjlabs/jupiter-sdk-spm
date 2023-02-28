@@ -71,7 +71,7 @@ public class PDRDistanceEstimator: NSObject {
             
             normalStepCountFlag = PDF.isNormalStep(normalStepCount: normalStepCheckCount, normalStepCountSet: normalStepCountSetting)
             
-            if ( normalStepCountFlag || finalUnitResult.index <= 2) {
+            if ( normalStepCountFlag || finalUnitResult.index <= MODE_AUTO_NORMAL_STEP_COUNT_SET ) {
                 finalUnitResult.index += 1
                 finalUnitResult.isIndexChanged = true
                 
@@ -89,8 +89,8 @@ public class PDRDistanceEstimator: NSObject {
                         finalUnitResult.length = 1.8
                     }
                 } else {
-                    if (isLossStep && finalUnitResult.index > 10) {
-                        finalUnitResult.length = 6
+                    if (isLossStep && finalUnitResult.index > AUTO_MODE_NORMAL_STEP_LOSS_CHECK_SIZE) {
+                        finalUnitResult.length = 0.6*Double(AUTO_MODE_NORMAL_STEP_LOSS_CHECK_SIZE)
                     }
                 }
             }
@@ -143,7 +143,7 @@ public class PDRDistanceEstimator: NSObject {
             normalStepLossCheckQueue.pop()
         }
         normalStepLossCheckQueue.append(normalStepCount)
-
+        
         return PacingDetectFunctions().checkAutoModeLossStep(normalStepCountBuffer: normalStepLossCheckQueue)
     }
 }

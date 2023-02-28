@@ -6,6 +6,6 @@ final class JupiterSDKTests: XCTestCase {
         // This is an example of a functional test case.
         // Use XCTAssert and related functions to verify your tests produce the correct
         // results.
-//        XCTAssertEqual(JupiterSDK().text, "Hello, World!")
+//        XCTAssertEqual(JupiterSDK.ServiceManager.init())
     }
 }
