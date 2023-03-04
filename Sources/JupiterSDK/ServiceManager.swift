@@ -1,6 +1,5 @@
 import Foundation
 import CoreMotion
-import UIKit
 
 public class ServiceManager: Observation {
     
@@ -58,7 +57,8 @@ public class ServiceManager: Observation {
                 updatedResult.phase = result.phase
                 updatedResult.calculated_time = result.calculated_time
                 updatedResult.index = result.index
-                updatedResult.velocity = result.velocity
+                
+                updatedResult.velocity = round(result.velocity*100)/100
                 updatedResult.mode = result.mode
                 
                 displayOutput.building = updatedResult.building_name
@@ -70,6 +70,12 @@ public class ServiceManager: Observation {
                 
                 observer.update(result: updatedResult)
             }
+        }
+    }
+    
+    func reporting(input: Int) {
+        for observer in observers {
+            observer.report(flag: input)
         }
     }
     
@@ -152,16 +158,16 @@ public class ServiceManager: Observation {
     // ----- Timer ----- //
     var receivedForceTimer: Timer?
     var RFD_INTERVAL: TimeInterval = 1/2 // second
-    
+
     var userVelocityTimer: Timer?
     var UVD_INTERVAL: TimeInterval = 1/40 // second
-    
+
     var requestTimer: Timer?
     var RQ_INTERVAL: TimeInterval = 2 // second
-    
+
     var updateTimer: Timer?
     var UPDATE_INTERVAL: TimeInterval = 1/5 // second
-    
+
     var osrTimer: Timer?
     var OSR_INTERVAL: TimeInterval = 2
     
@@ -193,7 +199,7 @@ public class ServiceManager: Observation {
     var nowTime: Int = 0
     var RECENT_THRESHOLD: Int = 10000 // 2200
     var INDEX_THRESHOLD: Int = 11
-    let VALID_BL_CHANGE_TIME = 15000
+    let VALID_BL_CHANGE_TIME = 10000
     let VALID_BL_CHANGE_TIME_SAME_SPOT = 5000
     
     var lastOsrId: Int = 0
@@ -234,7 +240,7 @@ public class ServiceManager: Observation {
 
     var kalmanP: Double = 1
     var kalmanQ: Double = 0.3
-    var kalmanR: Double = 6
+    var kalmanR: Double = 0.5
     var kalmanK: Double = 1
 
     var updateHeading: Double = 0
@@ -245,7 +251,7 @@ public class ServiceManager: Observation {
     
     var pastKalmanP: Double = 1
     var pastKalmanQ: Double = 0.3
-    var pastKalmanR: Double = 6
+    var pastKalmanR: Double = 0.5
     var pastKalmanK: Double = 1
 
     var pastHeadingKalmanP: Double = 0.5
@@ -289,7 +295,7 @@ public class ServiceManager: Observation {
     var timeSleepUV: Double = 0
     let STOP_THRESHOLD: Double = 2
     let SLEEP_THRESHOLD: Double = 600 // 10분
-    let SLEEP_THRESHOLD_RF: Double = 8 // 8s
+    let SLEEP_THRESHOLD_RF: Double = 6 // 6s
     
     var lastTrackingTime: Int = 0
     var lastResult = FineLocationTrackingResult()
@@ -551,7 +557,6 @@ public class ServiceManager: Observation {
                                             let result = decodeGEO(json: returnedString)
                                             let key: String = "\(buildingGeo)_\(levelGeo)"
                                             self.AbnormalArea[key] = result.geofences
-//                                            print("Geo Result : \(result.geofences), \(key)")
                                         }
                                     })
                                 }
@@ -883,27 +888,26 @@ public class ServiceManager: Observation {
     }
     
     func startTimer() {
-        
         if (receivedForceTimer == nil) {
             receivedForceTimer = Timer.scheduledTimer(timeInterval: RFD_INTERVAL, target: self, selector: #selector(self.receivedForceTimerUpdate), userInfo: nil, repeats: true)
             RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
-        
+
         if (userVelocityTimer == nil && self.service == "FLT") {
             userVelocityTimer = Timer.scheduledTimer(timeInterval: UVD_INTERVAL, target: self, selector: #selector(self.userVelocityTimerUpdate), userInfo: nil, repeats: true)
             RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
-         
+
         if (requestTimer == nil && self.service == "FLT") {
             requestTimer = Timer.scheduledTimer(timeInterval: RQ_INTERVAL, target: self, selector: #selector(self.requestTimerUpdate), userInfo: nil, repeats: true)
             RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
-        
+
         if (updateTimer == nil && self.service == "FLT") {
             updateTimer = Timer.scheduledTimer(timeInterval: UPDATE_INTERVAL, target: self, selector: #selector(self.outputTimerUpdate), userInfo: nil, repeats: true)
             RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
-        
+
         if (osrTimer == nil && self.service == "FLT") {
             osrTimer = Timer.scheduledTimer(timeInterval: OSR_INTERVAL, target: self, selector: #selector(self.osrTimerUpdate), userInfo: nil, repeats: true)
             RunLoop.current.add(receivedForceTimer!, forMode: .common)
@@ -915,22 +919,22 @@ public class ServiceManager: Observation {
             receivedForceTimer!.invalidate()
             receivedForceTimer = nil
         }
-        
+
         if (userVelocityTimer != nil) {
             userVelocityTimer!.invalidate()
             userVelocityTimer = nil
         }
-        
+
         if (osrTimer != nil) {
             osrTimer!.invalidate()
             osrTimer = nil
         }
-        
+
         if (requestTimer != nil) {
             requestTimer!.invalidate()
             requestTimer = nil
         }
-        
+
         if (updateTimer != nil) {
             updateTimer!.invalidate()
             updateTimer = nil
@@ -949,7 +953,7 @@ public class ServiceManager: Observation {
     
     func wakeUpFromSleepMode() {
         if (self.updateTimer == nil && self.service == "FLT") {
-            self.updateTimer = Timer.scheduledTimer(timeInterval: UPDATE_INTERVAL, target: self, selector: #selector(self.outputTimerUpdate), userInfo: nil, repeats: true)
+            updateTimer = Timer.scheduledTimer(timeInterval: UPDATE_INTERVAL, target: self, selector: #selector(self.outputTimerUpdate), userInfo: nil, repeats: true)
             RunLoop.current.add(receivedForceTimer!, forMode: .common)
         }
     }
@@ -979,15 +983,16 @@ public class ServiceManager: Observation {
     
     @objc func receivedForceTimerUpdate() {
         let currentTime = getCurrentTimeInMilliseconds() - (Int(bleManager.BLE_VALID_TIME)/2)
-        bleManager.trimBleData()
         
-        let bleDictionary = bleManager.bleAvg
+        let bleDictionary = bleManager.bleDictionary
+        let bleTrimed = bleManager.trimBleData(bleData: bleDictionary)
+        var bleAvg = bleManager.avgBleData(bleDictionary: bleTrimed)
         
         let bleCheckTime = Double(currentTime)
         let discoveredTime = bleManager.bleDiscoveredTime
         let diffBleTime = (bleCheckTime - discoveredTime)*1e-3
-//        print(getLocalTimeString() + " , (Jupiter) RFD : \(bleDictionary)")
-        if (!bleDictionary.isEmpty) {
+        
+        if (!bleAvg.isEmpty) {
             self.timeActiveRF = 0
             self.timeSleepRF = 0
             self.timeEmptyRF = 0
@@ -998,7 +1003,7 @@ public class ServiceManager: Observation {
             
             self.wakeUpFromSleepMode()
             if (self.isActiveService) {
-                let data = ReceivedForce(user_id: self.user_id, mobile_time: currentTime, ble: bleDictionary, pressure: self.pressure)
+                let data = ReceivedForce(user_id: self.user_id, mobile_time: currentTime, ble: bleAvg, pressure: self.pressure)
                 
                 inputReceivedForce.append(data)
                 if ((inputReceivedForce.count-1) >= RFD_INPUT_NUM) {
@@ -1109,13 +1114,15 @@ public class ServiceManager: Observation {
                 }
                 
                 if (self.isGetFirstResponse && !self.isPossibleEstBias) {
-                    self.indexAfterResponse += 1
-                    if (self.indexAfterResponse >= MINIMUN_INDEX_FOR_BIAS) {
-                        self.isPossibleEstBias = true
+                    if (self.isActiveReturn) {
+                        self.indexAfterResponse += 1
+                        if (self.indexAfterResponse >= MINIMUN_INDEX_FOR_BIAS) {
+                            self.isPossibleEstBias = true
+                        }
                     }
                 }
-                inputUserVelocity.append(data)
                 
+                inputUserVelocity.append(data)
                 // Time Update
                 if (self.isActiveKf) {
                     if (self.timeUpdateFlag) {
@@ -1244,8 +1251,6 @@ public class ServiceManager: Observation {
                     if (!self.isActiveRF) {
                         self.lastResultBufferUvdChanged = [Any]()
                         
-                        self.isActiveKf = false
-                        self.timeUpdateFlag = false
                         self.isActiveReturn = false
                         self.isGetFirstResponse = false
                         self.indexAfterResponse = 0
@@ -1260,7 +1265,6 @@ public class ServiceManager: Observation {
                         self.currentLevel = ""
                         
                         self.isEntered = false
-                        print(localTime + " , (Jupiter) Not in Service Area")
                     }
                 }
             } else {
@@ -1326,13 +1330,19 @@ public class ServiceManager: Observation {
                     if (result.mobile_time > self.preOutputMobileTime) {
                         if (!self.isGetFirstResponse) {
                             self.isGetFirstResponse = true
-                            print(localTime + " , (Jupiter) Info : Get First Response")
+                            
+                            if (self.isActiveReturn) {
+                                self.reporting(input: INDOOR_FLAG)
+                            }
                         }
                         
                         if (!self.isActiveReturn) {
                             let bleData = bleManager.bleAvg
-                            self.isActiveReturn = checkStrongRfd(bleDict: bleData)
-                            
+                            let isStrongRfd: Bool = checkStrongRfd(bleDict: bleData)
+                            self.isActiveReturn = isStrongRfd
+                            if (isStrongRfd) {
+                                self.reporting(input: INDOOR_FLAG)
+                            }
                         }
                         
                         self.preOutputMobileTime = result.mobile_time
@@ -1375,7 +1385,6 @@ public class ServiceManager: Observation {
                             self.flagPast = false
                             self.outputResult = finalResult
                         } else {
-//                            print(localTime + " , (Jupiter) Phase 3 Result (In KF): \(result)")
 //                             Kalman Filter가 동작 중이면서 위치 요청시 input의 phase 가 1~3 인 경우
                             if (result.phase == 4) {
                                 self.phase4Count += 1
@@ -1386,11 +1395,7 @@ public class ServiceManager: Observation {
                                 if (resultCorrected.isSuccess) {
                                     self.updateAllResult(result: resultCorrected.xyh, flag: false)
                                 }
-                            } else if (result.phase == 3 && self.runMode == "dr") {
-                                if (self.distanceAfterPhase1 >= 30 && resultCorrected.isSuccess) {
-                                    self.updateAllResult(result: resultCorrected.xyh, flag: false)
-                                }
-                            } else if (result.phase == 3 && self.runMode == "pdr") {
+                            } else if (result.phase == 3) {
                                 self.updateAllResult(result: resultCorrected.xyh, flag: false)
                             }
                             var timUpdateOutputCopy = self.timeUpdateOutput
@@ -1490,6 +1495,7 @@ public class ServiceManager: Observation {
                                     self.phase4Count += 1
                                     if (self.phase4Count > 19) {
                                         self.isEntered = true
+//                                        print(localTime + "(Jupiter) Phase 4 Result : isEntered = true")
                                     }
                                     if (self.isPhaseBreak) {
                                         if (self.runMode == "pdr") {
@@ -1683,7 +1689,6 @@ public class ServiceManager: Observation {
                 isOn = false
                 self.isEntered = true
                 self.isActiveReturn = true
-//                print(localTime + " , (Jupiter) Spot On : Indoor Spot")
                 return (isOn, "", "")
             }
             // Normal OSR
@@ -1714,6 +1719,7 @@ public class ServiceManager: Observation {
             self.currentLevel = levelDestination
             
             self.phase = 2
+            self.outputResult.phase = 2
             self.timeUpdateOutput.level_name = levelDestination
             self.measurementOutput.level_name = levelDestination
             self.outputResult.level_name = levelDestination
@@ -1722,21 +1728,37 @@ public class ServiceManager: Observation {
             self.travelingOsrDistance = 0
             self.isPossibleEstBias = false
             if (levelDestination == "") {
+//                print(localTime + " , (Jupiter) Spot On : \(result.spot_distance)")
                 self.buildingLevelChangedTime = 0
+                
+                self.isActiveKf = false
+                self.timeUpdateFlag = false
+                self.measurementUpdateFlag = false
+                self.timeUpdatePosition = KalmanOutput()
+                self.measurementPosition = KalmanOutput()
+
+                self.timeUpdateOutput = FineLocationTrackingFromServer()
+                self.measurementOutput = FineLocationTrackingFromServer()
+                
+                self.reporting(input: OUTDOOR_FLAG)
             } else {
                 self.buildingLevelChangedTime = currentTime
-                self.isActiveReturn = true
+                if (result.linked_level_name == "" && !self.isActiveReturn) {
+                    self.isActiveReturn = true
+                    self.reporting(input: INDOOR_FLAG)
+                }
             }
             
             self.preOutputMobileTime = currentTime
 //            print(localTime + " , (Jupiter) Spot On : Different Spot // levelDestination = \(levelDestination)")
         } else {
             // Same Spot Detected
-            if (self.travelingOsrDistance >= SAME_SPOT_DISTANCE) {
+            if (self.travelingOsrDistance >= result.spot_distance) {
                 self.currentBuilding = result.building_name
                 self.currentLevel = levelDestination
                 
                 self.phase = 2
+                self.outputResult.phase = 2
                 self.timeUpdateOutput.level_name = levelDestination
                 self.measurementOutput.level_name = levelDestination
                 self.outputResult.level_name = levelDestination
@@ -1745,10 +1767,25 @@ public class ServiceManager: Observation {
                 self.travelingOsrDistance = 0
                 self.isPossibleEstBias = false
                 if (levelDestination == "") {
+//                    print(localTime + " , (Jupiter) Spot On : \(result.spot_distance)")
                     self.buildingLevelChangedTime = 0
+                    
+                    self.isActiveKf = false
+                    self.timeUpdateFlag = false
+                    self.measurementUpdateFlag = false
+                    self.timeUpdatePosition = KalmanOutput()
+                    self.measurementPosition = KalmanOutput()
+
+                    self.timeUpdateOutput = FineLocationTrackingFromServer()
+                    self.measurementOutput = FineLocationTrackingFromServer()
+                    
+                    self.reporting(input: OUTDOOR_FLAG)
                 } else {
+                    if (result.linked_level_name == "" && !self.isActiveReturn) {
+                        self.isActiveReturn = true
+                        self.reporting(input: INDOOR_FLAG)
+                    }
                     self.buildingLevelChangedTime = currentTime
-                    self.isActiveReturn = true
                 }
                 self.preOutputMobileTime = currentTime
 //                print(localTime + " , (Jupiter) Spot On : Same Spot // levelDestination = \(levelDestination)")
@@ -2312,27 +2349,6 @@ public class ServiceManager: Observation {
     }
     
     // Kalman Filter
-    func kalmanInit(mode: String) {
-        kalmanP = 1
-        kalmanQ = 0.3
-        kalmanR = 6
-        kalmanK = 1
-
-        headingKalmanP = 0.5
-        headingKalmanQ = 0.5
-        headingKalmanR = 1
-        headingKalmanK = 1
-
-        timeUpdatePosition = KalmanOutput()
-        measurementPosition = KalmanOutput()
-
-        timeUpdateOutput = FineLocationTrackingFromServer()
-        measurementOutput = FineLocationTrackingFromServer()
-
-        timeUpdateFlag = false
-        measurementUpdateFlag = false
-    }
-
     func timeUpdatePositionInit(serverOutput: FineLocationTrackingFromServer) {
         timeUpdateOutput = serverOutput
         if (!measurementUpdateFlag) {

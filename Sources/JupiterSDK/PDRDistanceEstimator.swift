@@ -27,6 +27,8 @@ public class PDRDistanceEstimator: NSObject {
     public var normalStepCountFlag: Bool = false
     public var autoMode: Bool = false
     
+    var pastIndexChangedTime: Double = 0
+    
     public func normalStepCountSet(normalStepCountSet: Int) {
         self.normalStepCountSetting = normalStepCountSet
     }
@@ -46,7 +48,6 @@ public class PDRDistanceEstimator: NSObject {
         if (accNormEMAQueue.count < ACC_NORM_EMA_QUEUE_SIZE) {
             accNormEMAQueue.append(TimestampDouble(timestamp: time, valuestamp: accNormEMA))
             return UnitDistance()
-            
         } else {
             accNormEMAQueue.pop()
             accNormEMAQueue.append(TimestampDouble(timestamp: time, valuestamp: accNormEMA))
@@ -82,6 +83,14 @@ public class PDRDistanceEstimator: NSObject {
                     finalUnitResult.length = 0.5
                 }
                 
+                let isIndexChangedTime = foundAccPV.timestamp
+                var diffTime: Double = (isIndexChangedTime - self.pastIndexChangedTime)*1e-3
+                if (diffTime > 1000) {
+                    diffTime = 1000
+                }
+                self.pastIndexChangedTime = isIndexChangedTime
+                var tempVelocity: Double = (finalUnitResult.length/diffTime)
+                
                 updateStepLengthQueue(stepLengthWithTimeStamp: StepLengthWithTimestamp(timestamp: foundAccPV.timestamp, stepLength: finalUnitResult.length))
                 
                 if (!self.autoMode) {
@@ -93,9 +102,13 @@ public class PDRDistanceEstimator: NSObject {
                         finalUnitResult.length = 0.6*Double(AUTO_MODE_NORMAL_STEP_LOSS_CHECK_SIZE)
                     }
                 }
+                
+                if (tempVelocity > 1.45) {
+                    tempVelocity = 1.45
+                }
+                finalUnitResult.velocity = tempVelocity
             }
         }
-        finalUnitResult.velocity = 0
         
         return finalUnitResult
     }

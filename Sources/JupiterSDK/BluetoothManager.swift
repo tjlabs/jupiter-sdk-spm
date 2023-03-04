@@ -71,7 +71,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     var bleDictionary = [String: [[Double]]]()
     var bleRaw = [String: Double]()
     var bleAvg = [String: Double]()
-    var bleCheck = [String: [Double]]()
     var bleDiscoveredTime: Double = 0
     
     public var BLE_VALID_TIME: Double = 1000
@@ -174,18 +173,22 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                         $0.0.contains(bleName)
                     }
                     
-                    if (bleDictionary.contains(where: condition)) {
-                        let data = bleDictionary.filter(condition)
+                    var bleScaned = self.bleDictionary
+                    if (bleScaned.contains(where: condition)) {
+                        let data = bleScaned.filter(condition)
                         var value:[[Double]] = data[bleName]!
                         let dataToAdd: [Double] = [RSSI.doubleValue, bleTime]
                         value.append(dataToAdd)
                         
-                        bleDictionary.updateValue(value, forKey: bleName)
+                        bleScaned.updateValue(value, forKey: bleName)
                     } else {
-                        bleDictionary.updateValue([[RSSI.doubleValue, bleTime]], forKey: bleName)
+                        bleScaned.updateValue([[RSSI.doubleValue, bleTime]], forKey: bleName)
                     }
+                    self.bleDictionary = bleScaned
+                    let bleTrimed = trimBleData(bleData: bleScaned)
                     
-                    trimBleData()
+                    self.bleRaw = latestBleData(bleDictionary: bleTrimed)
+                    self.bleAvg = avgBleData(bleDictionary: bleTrimed)
                     
                     NotificationCenter.default.post(name: .scanInfo, object: nil, userInfo: userInfo)
                 }
@@ -267,13 +270,14 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
 //        print("(Jupiter) BLE Valid Time : \(self.BLE_VALID_TIME)")
     }
     
-    func trimBleData() {
+    func trimBleData(bleData: [String: [[Double]]]) -> [String: [[Double]]] {
         let nowTime = getCurrentTimeInMilliseconds()
         
-        let keys: [String] = Array(bleDictionary.keys.sorted())
+        var bleDictonary = bleData
+        let keys: [String] = Array(bleDictonary.keys.sorted())
         for index in 0..<keys.count {
             let bleID: String = keys[index]
-            let bleData: [[Double]] = bleDictionary[bleID]!
+            let bleData: [[Double]] = bleDictonary[bleID]!
             let bleCount = bleData.count
             var newValue = [[Double]]()
             for i in 0..<bleCount {
@@ -287,15 +291,13 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             }
             
             if ( newValue.count == 0 ) {
-                bleDictionary.removeValue(forKey: bleID)
+                bleDictonary.removeValue(forKey: bleID)
             } else {
-                bleDictionary.updateValue(newValue, forKey: bleID)
+                bleDictonary.updateValue(newValue, forKey: bleID)
             }
         }
         
-        bleCheck = chekcBleData(bleDictionary: bleDictionary)
-        bleRaw = latestBleData(bleDictionary: bleDictionary)
-        bleAvg = avgBleData(bleDictionary: bleDictionary)
+        return bleDictonary
     }
     
     func avgBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, Double> {

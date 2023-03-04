@@ -1,5 +1,7 @@
 import Foundation
 
+let INDOOR_FLAG: Int = 1
+let OUTDOOR_FLAG: Int = 0
 
 public protocol Observable {
     func addObserver(_ observer: Observer)
@@ -7,7 +9,7 @@ public protocol Observable {
 }
 public protocol Observer: class {
     func update(result: FineLocationTrackingResult)
-//    func reportErrors(errors: Int)
+    func report(flag: Int)
 }
 
 public class Observation: Observable {
