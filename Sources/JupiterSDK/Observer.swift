@@ -2,6 +2,7 @@ import Foundation
 
 let INDOOR_FLAG: Int = 1
 let OUTDOOR_FLAG: Int = 0
+let ABNORMAL_FLAG: Int = -1
 
 public protocol Observable {
     func addObserver(_ observer: Observer)

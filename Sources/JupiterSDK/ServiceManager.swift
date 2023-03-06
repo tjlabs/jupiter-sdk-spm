@@ -1209,7 +1209,7 @@ public class ServiceManager: Observation {
                     processPhase2(currentTime: currentTime, localTime: localTime)
                 } else if (self.phase < 4) {
                     // Phase 1 ~ 3
-                    processPhaseUnder3(currentTime: currentTime, localTime: localTime)
+                    processPhase3(currentTime: currentTime, localTime: localTime)
                 }
             }
         }
@@ -1274,7 +1274,7 @@ public class ServiceManager: Observation {
         })
     }
     
-    private func processPhaseUnder3(currentTime: Int, localTime: String) {
+    private func processPhase3(currentTime: Int, localTime: String) {
         var requestBiasArray: [Int] = [self.rssiBias]
         if (self.isPossibleEstBias) {
             if (self.isBiasRequested) {
@@ -1691,6 +1691,7 @@ public class ServiceManager: Observation {
                 self.isActiveReturn = true
                 return (isOn, "", "")
             }
+            
             // Normal OSR
             let currentLevel: String = level
             let levelNameCorrected: String = removeLevelDirectionString(levelName: currentLevel)
@@ -1702,17 +1703,27 @@ public class ServiceManager: Observation {
                 }
             }
             
-            // Up or Down Direction
-            let currentLevelNum: Int = getLevelNumber(levelName: currentLevel)
-            let destinationLevelNum: Int = getLevelNumber(levelName: levelDestination)
-            let levelDirection: String = checkLevelDirection(currentLevel: currentLevelNum, destinationLevel: destinationLevelNum)
-            
-            return (isOn, levelDestination, levelDirection)
+            if (currentLevel == "") {
+                self.reporting(input: ABNORMAL_FLAG)
+                
+                return (isOn, "", "")
+            } else {
+                // Up or Down Direction
+                let currentLevelNum: Int = getLevelNumber(levelName: currentLevel)
+                let destinationLevelNum: Int = getLevelNumber(levelName: levelDestination)
+                let levelDirection: String = checkLevelDirection(currentLevel: currentLevelNum, destinationLevel: destinationLevelNum)
+                
+                return (isOn, levelDestination, levelDirection)
+            }
         }
     }
     
     func determineSpotDetect(result: OnSpotRecognitionResult, lastSpotId: Int, levelDestination: String, currentTime: Int) {
         let localTime = getLocalTimeString()
+        var spotDistance = result.spot_distance
+        if (spotDistance == 0) {
+            spotDistance = 80
+        }
         if (result.spot_id != lastSpotId) {
             // Different Spot Detected
             self.currentBuilding = result.building_name
@@ -1728,7 +1739,7 @@ public class ServiceManager: Observation {
             self.travelingOsrDistance = 0
             self.isPossibleEstBias = false
             if (levelDestination == "") {
-//                print(localTime + " , (Jupiter) Spot On : \(result.spot_distance)")
+//                print(localTime + " , (Jupiter) Spot On : \(spotDistance)")
                 self.buildingLevelChangedTime = 0
                 
                 self.isActiveKf = false
@@ -1753,7 +1764,7 @@ public class ServiceManager: Observation {
 //            print(localTime + " , (Jupiter) Spot On : Different Spot // levelDestination = \(levelDestination)")
         } else {
             // Same Spot Detected
-            if (self.travelingOsrDistance >= result.spot_distance) {
+            if (self.travelingOsrDistance >= spotDistance) {
                 self.currentBuilding = result.building_name
                 self.currentLevel = levelDestination
                 
@@ -1767,7 +1778,7 @@ public class ServiceManager: Observation {
                 self.travelingOsrDistance = 0
                 self.isPossibleEstBias = false
                 if (levelDestination == "") {
-//                    print(localTime + " , (Jupiter) Spot On : \(result.spot_distance)")
+//                    print(localTime + " , (Jupiter) Spot On : \(spotDistance)")
                     self.buildingLevelChangedTime = 0
                     
                     self.isActiveKf = false

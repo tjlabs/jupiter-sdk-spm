@@ -403,6 +403,13 @@ public class NetworkManager {
         requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
         requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
         
+//        print("")
+//        print("====================================")
+//        print("POST OSR 데이터 :: ", input)
+//        print("====================================")
+//        print("")
+
+        
         let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
             
             // [error가 존재하면 종료]
@@ -436,6 +443,12 @@ public class NetworkManager {
             // [콜백 반환]
             DispatchQueue.main.async {
                 completion(resultCode, resultData)
+//                print("")
+//                print("====================================")
+//                print("RESPONSE OSR 데이터 :: ", resultCode)
+//                print("                 :: ", resultData)
+//                print("====================================")
+//                print("")
             }
         })
         
