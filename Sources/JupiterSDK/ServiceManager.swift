@@ -591,19 +591,26 @@ public class ServiceManager: Observation {
             saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
         }
         
+        self.initVariables()
+        self.isActiveReturn = true
+        displayOutput.phase = String(0)
+        self.isMapMatching = false
+        
+        let log: String = localTime + " , (Jupiter) Stop Service"
+        print(log)
+    }
+    
+    private func initVariables() {
         self.lastResultBufferUvdChanged = [Any]()
         self.indexAfterResponse = 0
         self.lastOsrId = 0
         self.phase4Count = 0
         self.phase = 0
-        displayOutput.phase = String(0)
         
         self.currentBuilding = ""
         self.currentLevel = "0F"
         
         self.isGetFirstResponse = false
-        self.isActiveReturn = true
-        self.isEntered = false
         
         self.isActiveKf = false
         self.timeUpdatePosition = KalmanOutput()
@@ -611,11 +618,6 @@ public class ServiceManager: Observation {
 
         self.timeUpdateOutput = FineLocationTrackingFromServer()
         self.measurementOutput = FineLocationTrackingFromServer()
-        
-        self.isMapMatching = false
-        
-        let log: String = localTime + " , (Jupiter) Stop Service"
-        print(log)
     }
     
     public func initCollect() {
@@ -1052,6 +1054,10 @@ public class ServiceManager: Observation {
             if (self.timeActiveRF >= SLEEP_THRESHOLD_RF) {
                 self.isActiveRF = false
                 self.timeActiveRF = 0
+                
+//                self.initVariables()
+//                self.isActiveReturn = false
+//                self.reporting(input: OUTDOOR_FLAG)
             }
             
             self.timeSleepRF += RFD_INTERVAL
@@ -1234,6 +1240,8 @@ public class ServiceManager: Observation {
                     // Phase 1 ~ 3
                     processPhase3(currentTime: currentTime, localTime: localTime)
                 }
+            } else if (!self.isGetFirstResponse) {
+                processPhase3(currentTime: currentTime, localTime: localTime)
             }
         }
     }
@@ -1329,7 +1337,16 @@ public class ServiceManager: Observation {
                     if (result.mobile_time > self.preOutputMobileTime) {
                         if (!self.isGetFirstResponse) {
                             self.isGetFirstResponse = true
+//                            self.reporting(input: INDOOR_FLAG)
                         }
+                        
+//                        if (!self.isActiveReturn) {
+//                            let isStrong = checkStrongRfd(bleDict: bleManager.bleAvg)
+//                            if (isStrong) {
+//                                self.isActiveReturn = true
+//                                self.reporting(input: INDOOR_FLAG)
+//                            }
+//                        }
                         
                         displayOutput.indexRx = result.index
                         self.phase = result.phase
@@ -1561,8 +1578,6 @@ public class ServiceManager: Observation {
 
                                                 muResult.building_name = result.building_name
                                                 muResult.level_name = result.level_name
-                                                
-//                                                self.buildingLevelChangedTime = getCurrentTimeInMilliseconds()
                                             } else {
                                                 muResult.building_name = self.currentBuilding
                                                 muResult.level_name = self.currentLevel
@@ -1662,7 +1677,7 @@ public class ServiceManager: Observation {
             if (levelArray[0] == levelArray[1]) {
                 isOn = false
                 self.isEntered = true
-                self.isActiveReturn = true
+//                self.isActiveReturn = true
 //                print(localTime + " , (Jupiter) Spot Detected : Indoor Spot")
                 
                 return (isOn, "", "")

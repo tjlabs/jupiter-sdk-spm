@@ -117,7 +117,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch (central.state) {
         case .poweredOff:
-            print("CoreBluetooth BLE hardware is powered off")
+//            print("CoreBluetooth BLE hardware is powered off")
             self.bluetoothReady = false
             break
         case .poweredOn:
