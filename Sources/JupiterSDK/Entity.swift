@@ -454,3 +454,74 @@ public func decodeGEO(json: String) -> GeoResult {
 
     return result
 }
+
+public func CLDtoSD(json: String) -> String {
+    let decoder = JSONDecoder()
+    let jsonString = json
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(CoarseLevelDetectionResult.self, from: data) {
+        var result = SectorDetectionResult()
+        result.mobile_time = decoded.mobile_time
+        result.sector_name = decoded.sector_name
+        result.calculated_time = decoded.calculated_time
+        
+        if (result.sector_name != "") {
+            let encodedData = try! JSONEncoder().encode(result)
+            if let encodedResult: String = String(data: encodedData, encoding: .utf8) {
+                return encodedResult
+            } else {
+                return "Fail"
+            }
+        }
+    }
+    return "Fail"
+}
+
+public func CLDtoBD(json: String) -> String {
+    let decoder = JSONDecoder()
+
+    let jsonString = json
+
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(CoarseLevelDetectionResult.self, from: data) {
+        var result = BuildingDetectionResult()
+        result.mobile_time = decoded.mobile_time
+        result.building_name = decoded.building_name
+        result.calculated_time = decoded.calculated_time
+        
+        if (result.building_name != "") {
+            let encodedData = try! JSONEncoder().encode(result)
+            if let encodedResult: String = String(data: encodedData, encoding: .utf8) {
+                return encodedResult
+            } else {
+                return "Fail"
+            }
+        }
+    }
+    return "Fail"
+}
+
+public func CLEtoFLD(json: String) -> String {
+    let decoder = JSONDecoder()
+
+    let jsonString = json
+
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(CoarseLocationEstimationResult.self, from: data) {
+        var result = FineLevelDetectionResult()
+        
+        result.mobile_time = decoded.mobile_time
+        result.building_name = decoded.building_name
+        result.level_name = decoded.level_name
+        result.scc = decoded.scc
+        result.scr = decoded.scr
+        result.calculated_time = decoded.calculated_time
+        
+        if (result.building_name != "" && result.level_name != "") {
+            let encodedData = try! JSONEncoder().encode(result)
+            if let encodedResult: String = String(data: encodedData, encoding: .utf8) {
+                return encodedResult
+            } else {
+                return "Fail"
+            }
+        }
+    }
+    return "Fail"
+}

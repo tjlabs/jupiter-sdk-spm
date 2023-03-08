@@ -184,8 +184,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     } else {
                         bleScaned.updateValue([[RSSI.doubleValue, bleTime]], forKey: bleName)
                     }
-                    self.bleDictionary = bleScaned
                     let bleTrimed = trimBleData(bleData: bleScaned)
+                    self.bleDictionary = bleTrimed
                     
                     self.bleRaw = latestBleData(bleDictionary: bleTrimed)
                     self.bleAvg = avgBleData(bleDictionary: bleTrimed)
@@ -267,7 +267,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         } else {
             self.BLE_VALID_TIME = 1500
         }
-//        print("(Jupiter) BLE Valid Time : \(self.BLE_VALID_TIME)")
     }
     
     func trimBleData(bleData: [String: [[Double]]]) -> [String: [[Double]]] {
