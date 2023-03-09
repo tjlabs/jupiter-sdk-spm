@@ -7,6 +7,7 @@ var IMAGE_URL = "jupiter_image"
 var USER_URL = "https://where-run-user" + REGION + "/user"
 var RF_URL = "https://where-run-record" + REGION + "/recordRF"
 var UV_URL = "https://where-run-record" + REGION + "/recordUV"
+var RECENT_URL = "https://where-run-user" + REGION + "/recent"
 
 var RELEASE_URL_i = "https://where-run-ios" + REGION + "/"
 var TEST_URL_i = "https://where-run-ios-t" + REGION + "/"
@@ -111,10 +112,10 @@ public func setBaseURL(url: String) {
     BASE_URL = url
     
     USER_URL = "https://where-run-user" + REGION + "/user"
-    
     RF_URL = "https://where-run-record" + REGION + "/recordRF"
     UV_URL = "https://where-run-record" + REGION + "/recordUV"
-
+    RECENT_URL = "https://where-run-user" + REGION + "/recent"
+    
     RELEASE_URL_i = "https://where-run-ios" + REGION + "/"
     TEST_URL_i = "https://where-run-ios-t" + REGION + "/"
 

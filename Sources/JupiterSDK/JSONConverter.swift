@@ -10,7 +10,6 @@ final class JSONConverter {
             
             switch error {
             case .dataCorrupted(let context):
-//                print(context.codingPath, context.debugDescription, context.underlyingError)
                 return nil
             default:
                 return nil
@@ -27,7 +26,6 @@ final class JSONConverter {
             
             switch error {
             case .dataCorrupted(let context):
-//                print(context.codingPath, context.debugDescription, context.underlyingError)
                 return nil
             default:
                 return nil
@@ -35,11 +33,12 @@ final class JSONConverter {
         }
     }
     
-    static func encodeJson<T: Codable>(param: T) -> Data? {
+    static func encodeJson<T: Encodable>(param: T) -> Data? {
         do {
             let result = try JSONEncoder().encode(param)
             return result
-        } catch {
+        } catch let error as NSError {
+            print("Error encoding JSON: \(error.localizedDescription)")
             return nil
         }
     }

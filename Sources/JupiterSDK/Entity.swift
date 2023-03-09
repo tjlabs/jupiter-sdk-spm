@@ -113,42 +113,14 @@ public struct ServiceResult {
 // ------------------------------------------------- //
 // -------------------- Network -------------------- //
 // ------------------------------------------------- //
-
-struct Input: Codable {
-    var user_id: String
-    var index: Int
-    var length: Double
-    var heading: Double
-    var pressure: Double
-    var looking_flag: Bool
-    var ble: [String: Double]
-    var mobile_time: Double
-    var device_model: String
-    var os_version: Int
-}
-
-public struct Output: Codable {
-    public var x: Double = 0
-    public var y: Double = 0
-    public var mobile_time: Double = 0
-    public var scc: Double = 0
-    public var scr: Double = 0
-    public var index: Int = 0
-    public var absolute_heading: Double = 0
-    public var building : String = ""
-    public var level : String = ""
-    public var phase : Int = 0
-    public var calculated_time: Double = 0
-}
-
-struct ReceivedForce: Codable {
+struct ReceivedForce: Encodable {
     var user_id: String
     var mobile_time: Int
     var ble: [String: Double]
     var pressure: Double
 }
 
-struct UserVelocity: Codable {
+struct UserVelocity: Encodable {
     var user_id: String
     var mobile_time: Int
     var index: Int
@@ -184,7 +156,7 @@ public struct BuildingDetectionResult: Codable {
 }
 
 // Coarse Level Detection
-struct CoarseLevelDetection: Codable {
+struct CoarseLevelDetection: Encodable {
     var user_id: String
     var mobile_time: Int
 }
@@ -226,7 +198,7 @@ public struct FineLevelDetectionResult: Codable {
 
 
 // Coarse Location Estimation
-struct CoarseLocationEstimation: Codable {
+struct CoarseLocationEstimation: Encodable {
     var user_id: String
     var mobile_time: Int
     var sector_id: Int
@@ -256,7 +228,7 @@ public struct CoarseLocationEstimationResult: Codable {
 
 
 // Fine Location Tracking
-struct FineLocationTracking: Codable {
+struct FineLocationTracking: Encodable {
     var user_id: String
     var mobile_time: Int
     var sector_id: Int
@@ -326,7 +298,7 @@ public struct FineLocationTrackingResult: Codable {
 }
 
 // On Spot Recognition
-struct OnSpotRecognition: Codable {
+struct OnSpotRecognition: Encodable {
     var user_id: String
     var mobile_time: Int
     var rss_compensation: Int
@@ -351,7 +323,7 @@ public struct OnSpotRecognitionResult: Codable {
 }
 
 // On Spot Authorizationds
-struct OnSpotAuthorization: Codable {
+struct OnSpotAuthorization: Encodable {
     var user_id: String
     var mobile_time: Int
 }
@@ -393,7 +365,7 @@ public struct Spot: Codable {
     }
 }
 
-public struct Geo: Codable {
+public struct Geo: Encodable {
     var sector_id: Int
     var building_name: String
     var level_name: String
@@ -414,7 +386,7 @@ public struct ResultIsUvdChanged: Codable {
 }
 
 // Recent
-struct RecentResult: Codable {
+struct RecentResult: Encodable {
     var user_id: String
     var mobile_time: Int
 }
