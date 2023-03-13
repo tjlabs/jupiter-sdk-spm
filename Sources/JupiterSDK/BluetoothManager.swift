@@ -115,11 +115,9 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch (central.state) {
         case .poweredOff:
-//            print("CoreBluetooth BLE hardware is powered off")
             self.bluetoothReady = false
             break
         case .poweredOn:
-//            print("CoreBluetooth BLE hardware is powered on and ready")
             self.bluetoothReady = true
             NotificationCenter.default.post(name: .bluetoothReady, object: nil, userInfo: nil)
             
@@ -128,18 +126,13 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             }
             break
         case .resetting:
-            //            print("CoreBluetooth BLE hardware is resetting")
             break
         case .unauthorized:
-            //            print("CoreBluetooth BLE state is unauthorized")
             break
         case .unknown:
-            //            print("CoreBluetooth BLE state is unknown");
             break
         case .unsupported:
-            //            print("CoreBluetooth BLE hardware is unsupported on this platform");
             break
-        //    default: break
         @unknown default:
             print("CBCentralManage: unknown state")
         }
@@ -337,33 +330,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         return ble
     }
     
-    func chekcBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, [Double]> {
-        var ble = [String: [Double]]()
-        
-        let keys: [String] = Array(bleDictionary.keys)
-        for index in 0..<keys.count {
-            let bleID: String = keys[index]
-            let bleData: [[Double]] = bleDictionary[bleID]!
-            let bleCount = bleData.count
-            
-            var rssiSum: Double = 0
-//            print("BLE INFO :", bleCount, "/", bleID, "/", bleData)
-            
-            for i in 0..<bleCount {
-                let rssi = bleData[i][0]
-                rssiSum += rssi
-            }
-            let rssiFinal: Double = floor(((rssiSum/Double(bleData.count)) + RSSI_BIAS) * digit) / digit
-            
-            if ( rssiSum == 0 ) {
-                ble.removeValue(forKey: bleID)
-            } else {
-                ble.updateValue([rssiFinal, Double(bleCount)], forKey: bleID)
-            }
-        }
-        return ble
-    }
-    
     func isConnected() -> Bool {
         return connected
     }
@@ -391,6 +357,9 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         self.centralManager.stopScan()
         
         self.isScanning = false
+        
+        self.bleDictionary = [String: [[Double]]]()
+        self.bleDiscoveredTime = 0
         
         NotificationCenter.default.post(name: .stopScan, object: nil)
     }

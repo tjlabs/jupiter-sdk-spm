@@ -14,7 +14,11 @@ public class ServiceManager: Observation {
                 
                 // Map Matching
                 if (self.isMapMatching) {
-                    let correctResult = correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: isPast, HEADING_RANGE: self.HEADING_RANGE)
+                    var mapMatchingMode: String = self.runMode
+                    if (self.isMercuryMode) {
+                        mapMatchingMode = "pdr"
+                    }
+                    let correctResult = correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: mapMatchingMode, isPast: isPast, HEADING_RANGE: self.HEADING_RANGE)
                     
                     if (correctResult.isSuccess) {
                         result.x = correctResult.xyh[0]
@@ -35,6 +39,10 @@ public class ServiceManager: Observation {
                 result.mobile_time = currentTime
                 result.level_name = removeLevelDirectionString(levelName: result.level_name)
                 result.velocity = round(result.velocity*100)/100
+                if (self.isMercuryMode) {
+                    result.phase = 1
+                }
+                
                 displayOutput.heading = result.absolute_heading
                 displayOutput.building = result.building_name
                 displayOutput.level = result.level_name
@@ -82,6 +90,7 @@ public class ServiceManager: Observation {
     var sensorData = SensorData()
     public var collectData = CollectData()
     
+    let magField = CMMagneticField()
     let motionManager = CMMotionManager()
     let motionAltimeter = CMAltimeter()
     var bleManager = BLECentralManager()
@@ -148,7 +157,10 @@ public class ServiceManager: Observation {
     var OSR_INTERVAL: TimeInterval = 2
 
     let SENSOR_INTERVAL: TimeInterval = 1/100
-
+    var abnormalMagCount: Int = 0
+    var isMercuryMode: Bool = false
+    let ABNORMAL_MAG_THRESHOLD: Double = 1000
+    let ABNORMAL_COUNT = 500
     var collectTimer: Timer?
     // ------------------ //
     
@@ -258,6 +270,7 @@ public class ServiceManager: Observation {
     var isStop: Bool = true
     var isEntered: Bool = false
     var phase4Count: Int = 0
+    var isSufficientRfd: Bool = false
     
     var timeActiveRF: Double = 0
     var timeActiveUV: Double = 0
@@ -267,8 +280,8 @@ public class ServiceManager: Observation {
     var timeSleepRF: Double = 0
     var timeSleepUV: Double = 0
     let STOP_THRESHOLD: Double = 2
-    let SLEEP_THRESHOLD: Double = 600 // 10분
-    let SLEEP_THRESHOLD_RF: Double = 6 // 6s
+    let SLEEP_THRESHOLD: Double = 600
+    let SLEEP_THRESHOLD_RF: Double = 6
     
     var lastTrackingTime: Int = 0
     var lastResult = FineLocationTrackingResult()
@@ -444,12 +457,12 @@ public class ServiceManager: Observation {
             
             return (isSuccess, message)
         } else {
-            if (!NetworkCheck.shared.isConnected) {
-                isSuccess = false
-                let log: String = localTime + " , (Jupiter) Error : Network is not connected"
-                message = log
-                return (isSuccess, message)
-            }
+//            if (!NetworkCheck.shared.isConnected) {
+//                isSuccess = false
+//                let log: String = localTime + " , (Jupiter) Error : Network is not connected"
+//                message = log
+//                return (isSuccess, message)
+//            }
             
             // Login Success
             let userInfo = UserInfo(user_id: self.user_id, device_model: deviceModel, os_version: osVersion)
@@ -546,6 +559,7 @@ public class ServiceManager: Observation {
                 }
             })
             self.loadRssiBias(sector_id: self.sector_id)
+            self.isActiveReturn = true
             
             return (isSuccess, message)
         }
@@ -582,7 +596,6 @@ public class ServiceManager: Observation {
         }
         
         self.initVariables()
-        self.isActiveReturn = true
         displayOutput.phase = String(0)
         self.isMapMatching = false
         
@@ -600,10 +613,13 @@ public class ServiceManager: Observation {
         
         self.currentBuilding = ""
         self.currentLevel = "0F"
+        self.outputResult = FineLocationTrackingResult()
         
         self.isGetFirstResponse = false
         
         self.isActiveKf = false
+        self.timeUpdateFlag = false
+        self.measurementUpdateFlag = false
         self.timeUpdatePosition = KalmanOutput()
         self.measurementPosition = KalmanOutput()
 
@@ -745,6 +761,7 @@ public class ServiceManager: Observation {
             print(log)
         }
         
+        
         if motionManager.isMagnetometerAvailable {
             sensorActive += 1
             // Uncalibrated
@@ -765,6 +782,39 @@ public class ServiceManager: Observation {
                     sensorData.mag[2] = magZ
                     collectData.mag[2] = magZ
                 }
+                let norm = sqrt(self.magX*self.magX + self.magY*self.magY + self.magZ*self.magZ)
+                
+                if (norm > ABNORMAL_MAG_THRESHOLD) {
+                    self.abnormalMagCount += 1
+                } else {
+                    self.abnormalMagCount = 0
+                }
+                
+                if (self.abnormalMagCount >= ABNORMAL_COUNT) {
+                    self.abnormalMagCount = ABNORMAL_COUNT
+                    if (!self.isMercuryMode && self.runMode == "dr") {
+                        self.isMercuryMode = true
+                        self.phase = 1
+                        self.isPossibleEstBias = false
+                        self.rssiBias = 0
+                        
+                        self.isActiveKf = false
+                        self.timeUpdateFlag = false
+                        self.measurementUpdateFlag = false
+                        self.timeUpdatePosition = KalmanOutput()
+                        self.measurementPosition = KalmanOutput()
+
+                        self.timeUpdateOutput = FineLocationTrackingFromServer()
+                        self.measurementOutput = FineLocationTrackingFromServer()
+                        self.reporting(input: MERCURY_FLAG)
+                    }
+                } else {
+                    if (self.isMercuryMode) {
+                        self.isMercuryMode = false
+                        self.reporting(input: JUPITER_FLAG)
+                    }
+                }
+//                print("Mag : \(self.magX) , \(self.magY) , \(self.magZ) , \(norm) , \(self.isMercuryMode)")
             }
         } else {
             let localTime: String = getLocalTimeString()
@@ -1014,6 +1064,9 @@ public class ServiceManager: Observation {
                 
                 inputReceivedForce.append(data)
                 if ((inputReceivedForce.count-1) >= RFD_INPUT_NUM) {
+                    let sufficientRfd: Bool = checkSufficientRfd(bleDict: bleAvg, CONDITION: -85, COUNT: 3)
+                    self.isSufficientRfd = sufficientRfd
+                    
                     inputReceivedForce.remove(at: 0)
                     NetworkManager.shared.putReceivedForce(url: RF_URL, input: inputReceivedForce, completion: { [self] statusCode, returnedStrig in
                         if (statusCode != 200) {
@@ -1048,12 +1101,12 @@ public class ServiceManager: Observation {
         }
     }
     
-    func checkStrongRfd(bleDict: [String: Double]) -> Bool {
+    func checkSufficientRfd(bleDict: [String: Double], CONDITION: Double, COUNT: Int) -> Bool {
         var count = 0
         for value in bleDict.values {
-            if value >= -85 {
+            if value >= CONDITION {
                 count += 1
-                if count >= 2 {
+                if count >= COUNT {
                     return true
                 }
             }
@@ -1115,7 +1168,6 @@ public class ServiceManager: Observation {
                     let lastResult = self.lastResult
                     if (lastResult.building_name != "" && lastResult.level_name != "") {
                         self.travelingOsrDistance += unitDRInfo.length
-                        let resultBufferData = ResultIsUvdChanged(mobile_time: lastResult.mobile_time, building_name: lastResult.building_name, level_name: lastResult.level_name)
                     }
                 }
                 
@@ -1185,7 +1237,11 @@ public class ServiceManager: Observation {
             // UV가 발생하지 않음
             self.timeActiveUV += UVD_INTERVAL
             if (self.timeActiveUV >= STOP_THRESHOLD && self.isGetFirstResponse) {
-                self.isStop = true
+                if (self.isMercuryMode) {
+                    self.isStop = false
+                } else {
+                    self.isStop = true
+                }
                 self.timeActiveUV = 0
                 displayOutput.velocity = 0
             }
@@ -1222,31 +1278,51 @@ public class ServiceManager: Observation {
         let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: [self.rssiBias])
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
             if (statusCode == 200) {
-                let result = jsonToResult(json: returnedString)
+                var result = jsonToResult(json: returnedString)
                 if (result.x != 0 && result.y != 0) {
                     if (result.mobile_time > self.preOutputMobileTime) {
-                        self.preOutputMobileTime = result.mobile_time
-                        self.phase = result.phase
-                        self.currentBuilding = result.building_name
-                        self.currentLevel = result.level_name
-                        
-                        self.timeUpdateOutput.building_name = result.building_name
-                        self.timeUpdateOutput.level_name = result.level_name
-                        
-                        self.measurementOutput.building_name = result.building_name
-                        self.measurementOutput.level_name = result.level_name
-                        
-                        displayOutput.indexRx = result.index
-                        
-                        let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
-                        self.outputResult = finalResult
-                        
-                        self.serverResult[0] = result.x
-                        self.serverResult[1] = result.y
-                        self.serverResult[2] = result.absolute_heading
-                        
-                        self.indexPast = result.index
+                        if (result.phase == 1) {
+                            self.phase = result.phase
+                        } else {
+                            if (self.isMercuryMode) {
+                                result.phase = 1
+                                result.absolute_heading = 0
+                            }
+                            self.phase = result.phase
+                            displayOutput.indexRx = result.index
+                            
+                            let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
+                            let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
+                            
+                            if (result.building_name != self.currentBuilding || resultLevelName != currentLevelName) {
+                                if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
+                                    // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                                    self.currentBuilding = result.building_name
+                                    self.currentLevel = result.level_name
+                                    
+                                    self.timeUpdateOutput.building_name = result.building_name
+                                    self.timeUpdateOutput.level_name = result.level_name
+                                    
+                                    self.measurementOutput.building_name = result.building_name
+                                    self.measurementOutput.level_name = result.level_name
+                                    
+                                    let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
+                                    self.outputResult = finalResult
+                                } else {
+                                    self.outputResult.x = result.x
+                                    self.outputResult.y = result.y
+                                    self.outputResult.absolute_heading = result.absolute_heading
+                                }
+                            }
+                            
+                            self.serverResult[0] = result.x
+                            self.serverResult[1] = result.y
+                            self.serverResult[2] = result.absolute_heading
+                            
+                            self.indexPast = result.index
+                        }
                     }
+                    self.preOutputMobileTime = result.mobile_time
                 }
             } else {
                 let log: String = localTime + " , (Jupiter) Error : Fail to request indoor position in Phase 2"
@@ -1261,11 +1337,11 @@ public class ServiceManager: Observation {
             if (self.isBiasRequested) {
                 requestBiasArray = [self.rssiBias]
             } else {
-                if (!isActiveKf) {
+                if (!self.isActiveKf && self.isSufficientRfd) {
                     requestBiasArray = self.rssiBiasArray
                     self.biasRequestTime = currentTime
                     self.isBiasRequested = true
-                } else if (self.phase > 2) {
+                } else if (self.phase > 2 && self.isSufficientRfd) {
                     requestBiasArray = self.rssiBiasArray
                     self.biasRequestTime = currentTime
                     self.isBiasRequested = true
@@ -1315,7 +1391,6 @@ public class ServiceManager: Observation {
                         }
                         
                         displayOutput.indexRx = result.index
-                        self.phase = result.phase
                         
                         var resultCorrected = self.correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
                         resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
@@ -1370,7 +1445,7 @@ public class ServiceManager: Observation {
                             
                             if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
                                 if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
-                                    // Building Level 이 바뀐지 15초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                                    // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
                                     self.currentBuilding = result.building_name
                                     self.currentLevel = result.level_name
 
@@ -1389,6 +1464,15 @@ public class ServiceManager: Observation {
                             self.flagPast = false
                             self.outputResult = updatedResult
                         }
+                        
+                        if (self.isMercuryMode) {
+                            self.phase = 1
+                            self.outputResult.phase = 1
+                            self.outputResult.absolute_heading = 0
+                        } else {
+                            self.phase = result.phase
+                        }
+                        
                         self.indexPast = result.index
                     }
                     self.preOutputMobileTime = result.mobile_time
@@ -1409,9 +1493,13 @@ public class ServiceManager: Observation {
             if (self.isBiasRequested) {
                 requestBiasArray = [self.rssiBias]
             } else {
-                requestBiasArray = self.rssiBiasArray
-                self.biasRequestTime = currentTime
-                self.isBiasRequested = true
+                if (self.isSufficientRfd) {
+                    requestBiasArray = self.rssiBiasArray
+                    self.biasRequestTime = currentTime
+                    self.isBiasRequested = true
+                } else {
+                    requestBiasArray = [self.rssiBias]
+                }
             }
         }
 
@@ -1538,7 +1626,7 @@ public class ServiceManager: Observation {
 
                                         if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
                                             if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
-                                                // Building Level 이 바뀐지 15초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                                                // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
                                                 self.currentBuilding = result.building_name
                                                 self.currentLevel = result.level_name
 
@@ -1583,7 +1671,7 @@ public class ServiceManager: Observation {
                 let bleTrimed = bleManager.trimBleData(bleData: bleData)
                 let bleAvg = bleManager.avgBleData(bleDictionary: bleTrimed)
                 
-                let isStrong = checkStrongRfd(bleDict: bleAvg)
+                let isStrong = checkSufficientRfd(bleDict: bleAvg, CONDITION: -85, COUNT: 2)
                 if (isStrong) {
                     self.isActiveReturn = true
                     self.reporting(input: INDOOR_FLAG)
@@ -1616,7 +1704,6 @@ public class ServiceManager: Observation {
     func isOnSpotRecognition(result: OnSpotRecognitionResult, level: String) -> (isOn: Bool, levelDestination: String, levelDirection: String) {
         let localTime = getLocalTimeString()
         var isOn: Bool = false
-
         let building_name = result.building_name
         let level_name = result.level_name
         let linked_level_name = result.linked_level_name
