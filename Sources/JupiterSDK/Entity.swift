@@ -280,6 +280,7 @@ public struct FineLocationTrackingResult: Codable {
     public var index: Int
     public var velocity: Double
     public var mode: String
+    public var ble_only_position: Bool
     
     public init() {
         self.mobile_time = 0
@@ -294,6 +295,7 @@ public struct FineLocationTrackingResult: Codable {
         self.index = 0
         self.velocity = 0
         self.mode = ""
+        self.ble_only_position = false
     }
 }
 
