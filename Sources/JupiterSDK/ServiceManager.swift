@@ -4,56 +4,10 @@ import UIKit
 
 public class ServiceManager: Observation {
     
-    func tracking(input: FineLocationTrackingResult, isPast: Bool, currentTime: Int) {
+    func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
-            var result = input
+            let result = input
             if (result.x != 0 && result.y != 0 && result.building_name != "" && result.level_name != "") {
-                result.absolute_heading = compensateHeading(heading: result.absolute_heading, mode: self.runMode)
-                result.mode = self.runMode
-                displayOutput.mode = self.runMode
-                
-                // Map Matching
-                if (self.isMapMatching) {
-                    var mapMatchingMode: String = self.runMode
-                    if (self.isVenusMode) {
-                        mapMatchingMode = "pdr"
-                    }
-//                    else if (self.mode == "auto") {
-//                        mapMatchingMode = "dr"
-//                    }
-                    let correctResult = correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: mapMatchingMode, isPast: isPast, HEADING_RANGE: self.HEADING_RANGE)
-                    
-                    if (correctResult.isSuccess) {
-                        result.x = correctResult.xyh[0]
-                        result.y = correctResult.xyh[1]
-                        result.absolute_heading = correctResult.xyh[2]
-                    } else {
-                        if (self.isActiveKf) {
-                            result = self.lastResult
-                        } else {
-                            let correctResult = correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: "pdr", isPast: isPast, HEADING_RANGE: self.HEADING_RANGE)
-                            result.x = correctResult.xyh[0]
-                            result.y = correctResult.xyh[1]
-                            result.absolute_heading = correctResult.xyh[2]
-                        }
-                    }
-                }
-                
-                result.mobile_time = currentTime
-                result.level_name = removeLevelDirectionString(levelName: result.level_name)
-                result.velocity = round(result.velocity*100)/100
-                if (self.isVenusMode) {
-                    result.phase = 1
-                }
-                
-                displayOutput.heading = result.absolute_heading
-                displayOutput.building = result.building_name
-                displayOutput.level = result.level_name
-                displayOutput.scc = result.scc
-                displayOutput.phase = String(result.phase)
-
-                self.lastResult = result
-                
                 observer.update(result: result)
             }
         }
@@ -87,6 +41,7 @@ public class ServiceManager: Observation {
     var Road = [String: [[Double]]]()
     var RoadHeading = [String: [String]]()
     var AbnormalArea = [String: [[Double]]]()
+    var EntranceArea = [String: [[Double]]]()
     
     
     // ----- Sensor & BLE ----- //
@@ -143,8 +98,6 @@ public class ServiceManager: Observation {
     
     
     // ----- Timer ----- //
-    var serviceStartTime: Int = 0
-    var updateStackedTime: Int = 0
     var receivedForceTimer: DispatchSourceTimer?
     var RFD_INTERVAL: TimeInterval = 1/2 // second
 
@@ -163,6 +116,7 @@ public class ServiceManager: Observation {
 
     let SENSOR_INTERVAL: TimeInterval = 1/100
     var abnormalMagCount: Int = 0
+    var magNormQueue = [Double]()
     var isVenusMode: Bool = false
     let ABNORMAL_MAG_THRESHOLD: Double = 2000
     let ABNORMAL_COUNT = 500
@@ -178,6 +132,7 @@ public class ServiceManager: Observation {
     
     
     // ----- Fine Location Tracking ----- //
+    var bleData: Dictionary<String, [[Double]]>?
     var unitDRInfo = UnitDRInfo()
     var unitDRGenerator = UnitDRGenerator()
     
@@ -193,7 +148,6 @@ public class ServiceManager: Observation {
     var RECENT_THRESHOLD: Int = 10000 // 2200
     var INDEX_THRESHOLD: Int = 11
     let VALID_BL_CHANGE_TIME = 7000 // 10000
-    let VALID_BL_CHANGE_TIME_SAME_SPOT = 5000
     
     let DEFAULT_SPOT_DISTANCE: Double = 80
     var lastOsrId: Int = 0
@@ -204,8 +158,12 @@ public class ServiceManager: Observation {
     var indexAfterResponse: Int = 0
     var isPossibleEstBias: Bool = false
     
-    var rssiBiasArray: [Int] = [4, 2, 6]
+    var rssiBiasArray: [Int] = [2, 0, 4]
     var rssiBias: Int = 0
+    var scCompensationArray: [Double] = [0.8, 1.0, 1.2]
+    var scCompensation: Double = 1.0
+    var scCompensationBadCount: Int = 0
+    
     let SCC_THRESHOLD: Double = 0.75
     let SCC_MAX: Double = 0.8
     let BIAS_RANGE_MAX: Int = 10
@@ -213,6 +171,10 @@ public class ServiceManager: Observation {
     var sccGoodBiasArray = [Int]()
     var biasRequestTime: Int = 0
     var isBiasRequested: Bool = false
+    
+    var scRequestTime: Int = 0
+    var isScRequested: Bool = false
+    
     let MINIMUN_INDEX_FOR_BIAS: Int = 30
     let GOOD_BIAS_ARRAY_SIZE: Int = 15
     // --------------------------------- //
@@ -315,6 +277,7 @@ public class ServiceManager: Observation {
 
     // Output
     var outputResult = FineLocationTrackingResult()
+    var resultToReturn = FineLocationTrackingResult()
     var flagPast: Bool = false
     var lastOutputTime: Int = 0
     var pastOutputTime: Int = 0
@@ -558,6 +521,10 @@ public class ServiceManager: Observation {
                                             self.AbnormalArea[key] = result.geofences
                                         }
                                     })
+                                    
+                                    // Entrance Area
+                                    let key: String = "\(buildingName)_\(levelName)"
+                                    self.EntranceArea[key] = loadEntranceArea(buildingName: buildingName, levelName: levelName)
                                 }
                             }
                         }
@@ -566,7 +533,6 @@ public class ServiceManager: Observation {
             })
             self.loadRssiBias(sector_id: self.sector_id)
             self.isActiveReturn = true
-            self.serviceStartTime = getCurrentTimeInMilliseconds()
             
             return (isSuccess, message)
         }
@@ -620,6 +586,7 @@ public class ServiceManager: Observation {
         self.currentBuilding = ""
         self.currentLevel = "0F"
         self.outputResult = FineLocationTrackingResult()
+        self.resultToReturn = FineLocationTrackingResult()
         
         self.isGetFirstResponse = false
         
@@ -789,7 +756,6 @@ public class ServiceManager: Observation {
                     collectData.mag[2] = magZ
                 }
                 let norm = sqrt(self.magX*self.magX + self.magY*self.magY + self.magZ*self.magZ)
-                
                 if (norm > ABNORMAL_MAG_THRESHOLD || norm == 0) {
                     self.abnormalMagCount += 1
                 } else {
@@ -803,7 +769,7 @@ public class ServiceManager: Observation {
                         self.phase = 1
                         self.isPossibleEstBias = false
                         self.rssiBias = 0
-                        
+
                         self.isActiveKf = false
                         self.timeUpdateFlag = false
                         self.measurementUpdateFlag = false
@@ -948,6 +914,7 @@ public class ServiceManager: Observation {
         
         return (isSuccess, message)
     }
+    
 
     func stopBLE() {
         bleManager.stopScan()
@@ -1029,79 +996,132 @@ public class ServiceManager: Observation {
     @objc func outputTimerUpdate() {
         let localTime = getLocalTimeString()
         if (self.isActiveReturn && self.isActiveService) {
-            self.serviceStartTime = self.serviceStartTime + Int(UPDATE_INTERVAL*1000)
             let currentTime = getCurrentTimeInMilliseconds()
             let dt = currentTime - self.lastOutputTime
-            let log: String = localTime + " , (Time Check) dt = \(dt) // time = \(currentTime) // before = \(self.lastOutputTime)"
+//            let log: String = localTime + " , (JupiterService) dt = \(dt) // time = \(currentTime) // before = \(self.lastOutputTime) // x = \(resultToReturn.x) // y = \(resultToReturn.y) // phase = \(resultToReturn.phase) // level = \(resultToReturn.level_name)"
 //            print(log)
             
-            var resultToReturn = self.outputResult
+            var resultToReturn = self.resultToReturn
+            resultToReturn.mobile_time = currentTime
             resultToReturn.ble_only_position = self.isVenusMode
-
-            self.tracking(input: resultToReturn, isPast: self.flagPast, currentTime: currentTime)
             
+            self.tracking(input: resultToReturn, isPast: self.flagPast)
             self.lastOutputTime = currentTime
-            self.pastOutputTime = self.serviceStartTime
         }
     }
     
+    func makeOutputResult(input: FineLocationTrackingResult, isPast: Bool, runMode: String, isVenusMode: Bool) -> FineLocationTrackingResult {
+        var result = input
+        if (result.x != 0 && result.y != 0 && result.building_name != "" && result.level_name != "") {
+            result.absolute_heading = compensateHeading(heading: result.absolute_heading, mode: runMode)
+            result.mode = runMode
+            displayOutput.mode = runMode
+            
+            // Map Matching
+            if (self.isMapMatching) {
+                var mapMatchingMode: String = runMode
+                if (isVenusMode) {
+                    mapMatchingMode = "pdr"
+                }
+                let correctResult = pathMatching(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: mapMatchingMode, isPast: isPast, HEADING_RANGE: self.HEADING_RANGE)
+                
+                if (correctResult.isSuccess) {
+                    result.x = correctResult.xyh[0]
+                    result.y = correctResult.xyh[1]
+                    result.absolute_heading = correctResult.xyh[2]
+                } else {
+                    if (self.isActiveKf) {
+                        result = self.lastResult
+                    } else {
+                        let correctResult = pathMatching(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: "pdr", isPast: isPast, HEADING_RANGE: self.HEADING_RANGE)
+                        result.x = correctResult.xyh[0]
+                        result.y = correctResult.xyh[1]
+                        result.absolute_heading = correctResult.xyh[2]
+                    }
+                }
+            }
+            
+            result.level_name = removeLevelDirectionString(levelName: result.level_name)
+            result.velocity = round(result.velocity*100)/100
+            if (isVenusMode) {
+                result.phase = 1
+            }
+            
+            displayOutput.heading = result.absolute_heading
+            displayOutput.building = result.building_name
+            displayOutput.level = result.level_name
+            displayOutput.scc = result.scc
+            displayOutput.phase = String(result.phase)
+            
+            self.lastResult = result
+        }
+        
+        return result
+    }
+    
     @objc func receivedForceTimerUpdate() {
+        let localTime: String = getLocalTimeString()
         bleManager.setValidTime(mode: self.runMode)
         let validTime = bleManager.BLE_VALID_TIME
         let currentTime = getCurrentTimeInMilliseconds() - (Int(validTime)/2)
-        let bleData = bleManager.bleDictionary
-        let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
-        let bleAvg = avgBleData(bleDictionary: bleTrimed)
-        
-        if (!bleAvg.isEmpty) {
-            self.timeActiveRF = 0
-            self.timeSleepRF = 0
-            self.timeEmptyRF = 0
+        var bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
+        if let bleData = bleDictionary {
+            let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+            let bleAvg = avgBleData(bleDictionary: bleTrimed)
             
-            self.isActiveRF = true
-            self.isEmptyRF = false
-            self.isActiveService = true
-            
-            self.wakeUpFromSleepMode()
-            if (self.isActiveService) {
-                let data = ReceivedForce(user_id: self.user_id, mobile_time: currentTime, ble: bleAvg, pressure: self.pressure)
+            if (!bleAvg.isEmpty) {
+                self.timeActiveRF = 0
+                self.timeSleepRF = 0
+                self.timeEmptyRF = 0
                 
-                inputReceivedForce.append(data)
-                if ((inputReceivedForce.count-1) >= RFD_INPUT_NUM) {
-                    let sufficientRfd: Bool = checkSufficientRfd(bleDict: bleAvg, CONDITION: -95, COUNT: 3)
-                    self.isSufficientRfd = sufficientRfd
+                self.isActiveRF = true
+                self.isEmptyRF = false
+                self.isActiveService = true
+                
+                self.wakeUpFromSleepMode()
+                if (self.isActiveService) {
+                    let data = ReceivedForce(user_id: self.user_id, mobile_time: currentTime, ble: bleAvg, pressure: self.pressure)
                     
-                    inputReceivedForce.remove(at: 0)
-                    NetworkManager.shared.putReceivedForce(url: RF_URL, input: inputReceivedForce, completion: { [self] statusCode, returnedStrig in
-                        if (statusCode != 200) {
-                            let localTime = getLocalTimeString()
-                            let log: String = localTime + " , (Jupiter) Error : Fail to send bluetooth data"
-                            print(log)
-                        }
-                    })
-                    inputReceivedForce = [ReceivedForce(user_id: "", mobile_time: 0, ble: [:], pressure: 0)]
+                    inputReceivedForce.append(data)
+                    if ((inputReceivedForce.count-1) >= RFD_INPUT_NUM) {
+                        let sufficientRfd: Bool = checkSufficientRfd(bleDict: bleAvg, CONDITION: -95, COUNT: 3)
+                        self.isSufficientRfd = sufficientRfd
+                        
+                        inputReceivedForce.remove(at: 0)
+                        NetworkManager.shared.putReceivedForce(url: RF_URL, input: inputReceivedForce, completion: { [self] statusCode, returnedStrig in
+                            if (statusCode != 200) {
+                                let localTime = getLocalTimeString()
+                                let log: String = localTime + " , (Jupiter) Error : Fail to send bluetooth data"
+                                print(log)
+                            }
+                        })
+                        inputReceivedForce = [ReceivedForce(user_id: "", mobile_time: 0, ble: [:], pressure: 0)]
+                    }
+                }
+            } else {
+                self.timeActiveRF += RFD_INTERVAL
+                if (self.timeActiveRF >= SLEEP_THRESHOLD_RF) {
+                    self.isActiveRF = false
+                    
+                    // Here
+                    if (self.isActiveReturn && self.isGetFirstResponse) {
+                        self.initVariables()
+                        self.isActiveReturn = false
+                        self.reporting(input: OUTDOOR_FLAG)
+                    }
+                }
+                
+                self.timeSleepRF += RFD_INTERVAL
+                if (self.timeSleepRF >= SLEEP_THRESHOLD) {
+                    self.isActiveService = false
+                    self.timeSleepRF = 0
+                    
+                    self.enterSleepMode()
                 }
             }
         } else {
-            self.timeActiveRF += RFD_INTERVAL
-            if (self.timeActiveRF >= SLEEP_THRESHOLD_RF) {
-                self.isActiveRF = false
-                
-                // Here
-                if (self.isActiveReturn && self.isGetFirstResponse) {
-                    self.initVariables()
-                    self.isActiveReturn = false
-                    self.reporting(input: OUTDOOR_FLAG)
-                }
-            }
-            
-            self.timeSleepRF += RFD_INTERVAL
-            if (self.timeSleepRF >= SLEEP_THRESHOLD) {
-                self.isActiveService = false
-                self.timeSleepRF = 0
-                
-                self.enterSleepMode()
-            }
+            let log: String = localTime + " , (Jupiter) Warnings : Fail to get recent ble"
+            print(log)
         }
     }
     
@@ -1188,7 +1208,7 @@ public class ServiceManager: Observation {
                 // Time Update
                 if (self.isActiveKf) {
                     if (self.timeUpdateFlag) {
-                        let tuOutput = timeUpdate(length: curUnitDRLength, diffHeading: diffHeading, mobileTime: currentTime, isNeedHeadingCorrection: isNeedHeadingCorrection)
+                        let tuOutput = timeUpdate(length: curUnitDRLength, diffHeading: diffHeading, mobileTime: currentTime, isNeedHeadingCorrection: isNeedHeadingCorrection, runMode: self.runMode)
                         var tuResult = fromServerToResult(fromServer: tuOutput, velocity: displayOutput.velocity)
                         
                         self.timeUpdateResult[0] = tuResult.x
@@ -1209,6 +1229,8 @@ public class ServiceManager: Observation {
                             tuResult.mobile_time = trackingTime
                             self.outputResult = tuResult
                             self.flagPast = false
+                            
+                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                         }
                     }
                 }
@@ -1279,12 +1301,15 @@ public class ServiceManager: Observation {
     }
     
     private func processPhase2(currentTime: Int, localTime: String) {
-        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: [self.rssiBias])
+        let localTime = getLocalTimeString()
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: [self.rssiBias], sc_compensation_list: [1.0])
+//        print(localTime + " , (Jupiter) Phase 2 Input : \(input.level_name)")
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
             if (statusCode == 200) {
                 var result = jsonToResult(json: returnedString)
                 if (result.x != 0 && result.y != 0) {
                     if (result.mobile_time > self.preOutputMobileTime) {
+//                        print(localTime + " , (Jupiter) Phase 2 Result : \(result.level_name) , \(result.phase)")
                         if (result.phase == 1) {
                             self.phase = result.phase
                         } else {
@@ -1312,10 +1337,14 @@ public class ServiceManager: Observation {
                                     
                                     let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
                                     self.outputResult = finalResult
+                                    
+                                    self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                                 } else {
                                     self.outputResult.x = result.x
                                     self.outputResult.y = result.y
                                     self.outputResult.absolute_heading = result.absolute_heading
+                                    
+                                    self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                                 }
                             }
                             
@@ -1355,7 +1384,8 @@ public class ServiceManager: Observation {
             }
         }
         
-        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray)
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray, sc_compensation_list: [1.0])
+//        print(localTime + " , (Jupiter) Phase 3 Input : \(input.level_name)")
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
             if (statusCode == 200) {
                 let result = jsonToResult(json: returnedString)
@@ -1387,6 +1417,7 @@ public class ServiceManager: Observation {
                     }
                     
                     if (result.mobile_time > self.preOutputMobileTime) {
+//                        print(localTime + " , (Jupiter) Phase 3 Result : \(result.level_name) , \(result.phase)")
                         if (!self.isGetFirstResponse) {
                             self.isGetFirstResponse = true
                             if (self.isActiveReturn) {
@@ -1395,7 +1426,7 @@ public class ServiceManager: Observation {
                         }
                         displayOutput.indexRx = result.index
                         
-                        var resultCorrected = self.correct(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+                        var resultCorrected = self.pathMatching(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
                         resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
                         
                         self.serverResult[0] = resultCorrected.xyh[0]
@@ -1420,7 +1451,8 @@ public class ServiceManager: Observation {
                                 self.outputResult.x = resultCorrected.xyh[0]
                                 self.outputResult.y = resultCorrected.xyh[1]
                                 self.outputResult.absolute_heading = resultCorrected.xyh[2]
-
+                                
+                                self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                                 self.isActiveKf = true
                             }
                             
@@ -1439,6 +1471,8 @@ public class ServiceManager: Observation {
                             
                             self.flagPast = false
                             self.outputResult = finalResult
+                            
+                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                         } else {
                             // Kalman Filter가 동작 중이면서 위치 요청시 input의 phase 가 1~3 인 경우
                             if (result.phase == 4) {
@@ -1475,12 +1509,16 @@ public class ServiceManager: Observation {
 
                             self.flagPast = false
                             self.outputResult = updatedResult
+                            
+                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                         }
                         
                         if (self.isVenusMode) {
                             self.phase = 1
                             self.outputResult.phase = 1
                             self.outputResult.absolute_heading = 0
+                            
+                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                         } else {
                             self.phase = result.phase
                         }
@@ -1500,6 +1538,8 @@ public class ServiceManager: Observation {
     private func processPhase4(currentTime: Int, localTime: String) {
         self.nowTime = currentTime
         var requestBiasArray: [Int] = [self.rssiBias]
+        var requestScArray: [Double] = [self.scCompensation]
+        
         if (self.isPossibleEstBias) {
             if (self.isBiasRequested) {
                 requestBiasArray = [self.rssiBias]
@@ -1513,11 +1553,24 @@ public class ServiceManager: Observation {
                 }
             }
         }
-
-        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray)
+        
+        // 사이즈 검사
+        // 3개 -> scCompensation 불가능 -> 여기는 무조건 1개 보냄
+        if (requestBiasArray.count == 1) {
+            // 1개 -> scCoompenstaion 가능 -> 여기서 판단해서 3개보낼지 하나보낼지
+            if (self.isScRequested) {
+                requestScArray = [self.scCompensation]
+            } else {
+                requestScArray = self.scCompensationArray
+                self.scRequestTime = currentTime
+                self.isScRequested = true
+            }
+        }
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray, sc_compensation_list: requestScArray)
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
             if (statusCode == 200) {
                 let result = jsonToResult(json: returnedString)
+                // Bias Compensation
                 if (self.isBiasRequested) {
                     let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
                     if (biasCheckTime < 100) {
@@ -1542,12 +1595,48 @@ public class ServiceManager: Observation {
                         self.isBiasRequested = false
                     }
                 }
+                
+                // Sc Compensation
+                if (self.isScRequested) {
+                    let compensationCheckTime = abs(result.mobile_time - self.scRequestTime)
+                    if (compensationCheckTime < 100) {
+                        if (result.scc < 0.55) {
+                            self.scCompensationBadCount += 1
+                        } else {
+                            if (result.scc > 0.7) {
+                                self.scCompensation = result.sc_compensation
+                            }
+                            self.scCompensationBadCount = 0
+                        }
+
+                        if (self.scCompensationBadCount > 1) {
+                            self.scCompensationBadCount = 0
+                            let resultEstScCompensation = estimateScCompensation(sccResult: result.scc, scResult: result.sc_compensation, scArray: self.scCompensationArray)
+                            self.scCompensationArray = resultEstScCompensation
+                            self.isScRequested = false
+                        }
+                    } else if (compensationCheckTime > 3000) {
+                        self.isScRequested = false
+                    }
+                }
 
                 if ((self.nowTime - result.mobile_time) <= RECENT_THRESHOLD) {
                     if ((result.index - self.indexPast) < INDEX_THRESHOLD) {
                         if (result.mobile_time > self.preOutputMobileTime) {
                             if (result.phase == 4) {
                                 if (self.isActiveReturn) {
+                                    let outputBuilding = self.outputResult.building_name
+                                    let outputLevel = self.outputResult.level_name
+                                    let outputPhase = self.outputResult.phase
+                                    
+                                    self.timeUpdateOutput.building_name = outputBuilding
+                                    self.timeUpdateOutput.level_name = outputLevel
+                                    self.timeUpdateOutput.phase = outputPhase
+                                    
+                                    self.measurementOutput.building_name = outputBuilding
+                                    self.measurementOutput.level_name = outputLevel
+                                    self.measurementOutput.phase = outputPhase
+                                    
                                     self.isActiveKf = true
                                     self.timeUpdateFlag = true
                                 }
@@ -1580,7 +1669,7 @@ public class ServiceManager: Observation {
                                         // Measurement Update 하기전에 현재 Time Update 위치를 고려
                                         var resultForMu = result
                                         resultForMu.absolute_heading = compensateHeading(heading: resultForMu.absolute_heading, mode: self.runMode)
-                                        let resultCorrected = self.correct(building: resultForMu.building_name, level: resultForMu.level_name, x: resultForMu.x, y: resultForMu.y, heading: resultForMu.absolute_heading, tuXY: [self.pastTuResult.x, self.pastTuResult.y], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+                                        let resultCorrected = self.pathMatching(building: resultForMu.building_name, level: resultForMu.level_name, x: resultForMu.x, y: resultForMu.y, heading: resultForMu.absolute_heading, tuXY: [self.pastTuResult.x, self.pastTuResult.y], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
 
                                         self.serverResult[0] = resultCorrected.xyh[0]
                                         self.serverResult[1] = resultCorrected.xyh[1]
@@ -1651,7 +1740,7 @@ public class ServiceManager: Observation {
 
                                         self.flagPast = false
                                         self.outputResult = muResult
-
+                                        self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                                         timeUpdatePositionInit(serverOutput: muOutput)
                                     }
                                 }
@@ -1677,16 +1766,22 @@ public class ServiceManager: Observation {
     
     @objc func osrTimerUpdate() {
         if (self.isGetFirstResponse) {
+            let localTime: String = getLocalTimeString()
             if (!self.isActiveReturn) {
                 let validTime = bleManager.BLE_VALID_TIME
-                let bleData = bleManager.bleDictionary
-                let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
-                let bleAvg = avgBleData(bleDictionary: bleTrimed)
-                
-                let isStrong = checkSufficientRfd(bleDict: bleAvg, CONDITION: -87, COUNT: 2)
-                if (isStrong) {
-                    self.isActiveReturn = true
-                    self.reporting(input: INDOOR_FLAG)
+                var bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
+                if let bleData = bleDictionary {
+                    let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+                    let bleAvg = avgBleData(bleDictionary: bleTrimed)
+                    
+                    let isStrong = checkSufficientRfd(bleDict: bleAvg, CONDITION: -87, COUNT: 2)
+                    if (isStrong) {
+                        self.reporting(input: INDOOR_FLAG)
+                        self.isActiveReturn = true
+                    }
+                } else {
+                    let log: String = localTime + " , (Jupiter) Warnings : Fail to get recent ble"
+                    print(log)
                 }
             }
             
@@ -1706,8 +1801,13 @@ public class ServiceManager: Observation {
             })
             
             // Check Abnormal Area
-            let scaleFactor = self.checkInAbnormalArea(result: self.lastResult)
+            let lastResult = self.lastResult
+            let scaleFactor = self.checkInAbnormalArea(result: lastResult)
             unitDRGenerator.setVelocityScaleFactor(scaleFactor: scaleFactor)
+            
+            // Check Entrance Level
+            let isEntrance = self.checkIsEntranceLevel(result: lastResult)
+            unitDRGenerator.setIsEntranceLevel(flag: isEntrance)
         } else {
             self.travelingOsrDistance = 0
         }
@@ -1782,6 +1882,8 @@ public class ServiceManager: Observation {
                     self.outputResult.level_name = levelDestination
                     self.phase = 2
                     self.outputResult.phase = 2
+                    
+                    self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                 }
             }
             self.currentSpot = result.spot_id
@@ -1807,6 +1909,8 @@ public class ServiceManager: Observation {
                         self.outputResult.level_name = levelDestination
                         self.phase = 2
                         self.outputResult.phase = 2
+                        
+                        self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                     }
                 }
                 self.currentSpot = result.spot_id
@@ -1862,7 +1966,7 @@ public class ServiceManager: Observation {
         let lastResult = result
         
         let buildingName = lastResult.building_name
-        let levelName = lastResult.level_name
+        let levelName = removeLevelDirectionString(levelName: result.level_name)
         
         let key = "\(buildingName)_\(levelName)"
         guard let abnormalArea: [[Double]] = AbnormalArea[key] else {
@@ -1884,6 +1988,38 @@ public class ServiceManager: Observation {
         }
         
         return velocityScaleFactor
+    }
+    
+    func checkIsEntranceLevel(result: FineLocationTrackingResult) -> Bool {
+        let localTime = getLocalTimeString()
+        let lastResult = result
+        
+        let buildingName = lastResult.building_name
+        let levelName = removeLevelDirectionString(levelName: result.level_name)
+        
+        if (levelName == "B0") {
+            return true
+        } else {
+            let key = "\(buildingName)_\(levelName)"
+            guard let entranceArea: [[Double]] = EntranceArea[key] else {
+                return false
+            }
+            
+            for i in 0..<entranceArea.count {
+                let xMin = entranceArea[i][0]
+                let yMin = entranceArea[i][1]
+                let xMax = entranceArea[i][2]
+                let yMax = entranceArea[i][3]
+                
+                if (lastResult.x >= xMin && lastResult.x <= xMax) {
+                    if (lastResult.y >= yMin && lastResult.y <= yMax) {
+                        return true
+                    }
+                }
+            }
+            
+            return false
+        }
     }
     
     func saveRssiBias(bias: Int, sector_id: Int) {
@@ -1919,7 +2055,6 @@ public class ServiceManager: Observation {
             self.rssiBiasArray = biasArray
         }
     }
-    
     
     func estimateRssiBias(sccResult: Double, biasResult: Int, biasArray: [Int]) -> (Bool, [Int]) {
         var isSccHigh: Bool = false
@@ -1967,6 +2102,12 @@ public class ServiceManager: Observation {
         return (isSccHigh, newBiasArray)
     }
     
+    func estimateScCompensation(sccResult: Double, scResult: Double, scArray: [Double]) -> [Double] {
+        var newBiasArray: [Double] = scArray
+        
+        return newBiasArray
+    }
+    
     func averageBiasArray(biasArray: [Int]) -> Int {
         var result: Int = 0
         let array: [Double] = convertToDoubleArray(intArray: biasArray)
@@ -1995,16 +2136,22 @@ public class ServiceManager: Observation {
     }
     
     @objc func collectTimerUpdate() {
+        let localTime = getLocalTimeString()
         let validTime = bleManager.BLE_VALID_TIME
         let currentTime = getCurrentTimeInMilliseconds()
-        let bleDictionary = bleManager.bleDictionary
-        let bleTrimed = trimBleData(bleData: bleDictionary, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
-        let bleAvg = avgBleData(bleDictionary: bleTrimed)
-        let bleRaw = bleManager.latestBleData(bleDictionary: bleTrimed)
-        
-        collectData.time = currentTime
-        collectData.bleRaw = bleRaw
-        collectData.bleAvg = bleAvg
+        var bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
+        if let bleData = bleDictionary {
+            let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+            let bleAvg = avgBleData(bleDictionary: bleTrimed)
+            let bleRaw = latestBleData(bleDictionary: bleTrimed)
+            
+            collectData.time = currentTime
+            collectData.bleRaw = bleRaw
+            collectData.bleAvg = bleAvg
+        } else {
+            let log: String = localTime + " , (Jupiter) Warnings : Fail to get recent ble"
+            print(log)
+        }
         
         if (onStartFlag) {
             unitDRInfo = unitDRGenerator.generateDRInfo(sensorData: sensorData)
@@ -2134,6 +2281,26 @@ public class ServiceManager: Observation {
         return abnormalArea
     }
     
+    private func loadEntranceArea(buildingName: String, levelName: String) -> [[Double]] {
+        var entranceArea = [[Double]]()
+        let key: String = "\(buildingName)_\(levelName)"
+        if (key == "COEX_B2") {
+            entranceArea.append([225, 395, 262, 420])
+            entranceArea.append([247, 263, 296, 290])
+            entranceArea.append([20, 360, 67, 396])
+            entranceArea.append([265, 0, 298, 29])
+            entranceArea.append([241, 154, 257, 185])
+        } else if (key == "COEX_B3") {
+            entranceArea.append([225, 395, 262, 420])
+            entranceArea.append([247, 263, 296, 290])
+        } else if (key == "COEX_B4") {
+            entranceArea.append([225, 395, 262, 420])
+            entranceArea.append([247, 263, 296, 290])
+        }
+        
+        return entranceArea
+    }
+    
     private func updateAllResult(result: [Double]) {
         self.timeUpdatePosition.x = result[0]
         self.timeUpdatePosition.y = result[1]
@@ -2149,9 +2316,11 @@ public class ServiceManager: Observation {
         
         self.outputResult.x = result[0]
         self.outputResult.y = result[1]
+        
+        self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
     }
     
-    private func correct(building: String, level: String, x: Double, y: Double, heading: Double, tuXY: [Double], mode: String, isPast: Bool, HEADING_RANGE: Double) -> (isSuccess: Bool, xyh: [Double]) {
+    public func pathMatching(building: String, level: String, x: Double, y: Double, heading: Double, tuXY: [Double], mode: String, isPast: Bool, HEADING_RANGE: Double) -> (isSuccess: Bool, xyh: [Double]) {
         var isSuccess: Bool = false
         var xyh: [Double] = [x, y, heading]
         let levelCopy: String = self.removeLevelDirectionString(levelName: level)
@@ -2387,14 +2556,14 @@ public class ServiceManager: Observation {
         }
     }
 
-    func timeUpdate(length: Double, diffHeading: Double, mobileTime: Int, isNeedHeadingCorrection: Bool) -> FineLocationTrackingFromServer {
+    func timeUpdate(length: Double, diffHeading: Double, mobileTime: Int, isNeedHeadingCorrection: Bool, runMode: String) -> FineLocationTrackingFromServer {
         updateHeading = timeUpdatePosition.heading + diffHeading
         
         var dx = length*cos(updateHeading*D2R)
         var dy = length*sin(updateHeading*D2R)
         
         if (self.phase != 4) {
-            if (self.runMode != "pdr") {
+            if (runMode != "pdr") {
                 dx = dx * TU_SCALE_VALUE
                 dy = dy * TU_SCALE_VALUE
             }
@@ -2404,10 +2573,12 @@ public class ServiceManager: Observation {
         timeUpdatePosition.y = timeUpdatePosition.y + dy
         timeUpdatePosition.heading = updateHeading
         
+        
         var timeUpdateCopy = timeUpdatePosition
-        let correctedTuCopy = self.correct(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+        let correctedTuCopy = self.pathMatching(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: "dr", isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+        
         if (correctedTuCopy.isSuccess) {
-            if (self.runMode == "pdr") {
+            if (runMode == "pdr") {
                 timeUpdateCopy.x = correctedTuCopy.xyh[0]
                 timeUpdateCopy.y = correctedTuCopy.xyh[1]
             } else {
@@ -2419,12 +2590,10 @@ public class ServiceManager: Observation {
             }
             timeUpdatePosition = timeUpdateCopy
         } else {
-            if (self.runMode == "dr") {
-                let correctedTuCopy = self.correct(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: "pdr", isPast: false, HEADING_RANGE: self.HEADING_RANGE)
-                timeUpdateCopy.x = correctedTuCopy.xyh[0]
-                timeUpdateCopy.y = correctedTuCopy.xyh[1]
-                timeUpdatePosition = timeUpdateCopy
-            }
+            let correctedTuCopy = self.pathMatching(building: timeUpdateOutput.building_name, level: timeUpdateOutput.level_name, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: timeUpdateCopy.heading, tuXY: [0,0], mode: "pdr", isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+            timeUpdateCopy.x = correctedTuCopy.xyh[0]
+            timeUpdateCopy.y = correctedTuCopy.xyh[1]
+            timeUpdatePosition = timeUpdateCopy
         }
         
         kalmanP += kalmanQ
@@ -2442,13 +2611,13 @@ public class ServiceManager: Observation {
 
     func measurementUpdate(timeUpdatePosition: KalmanOutput, serverOutputHat: FineLocationTrackingFromServer, originalResult: [Double], isNeedHeadingCorrection: Bool, mode: String) -> FineLocationTrackingFromServer {
         var serverOutputHatCopy = serverOutputHat
-        serverOutputHatCopy.absolute_heading = compensateHeading(heading: serverOutputHatCopy.absolute_heading, mode: self.runMode)
+        serverOutputHatCopy.absolute_heading = compensateHeading(heading: serverOutputHatCopy.absolute_heading, mode: mode)
         
         // ServerOutputHat을 맵매칭
-        let serverOutputHatCopyMm = self.correct(building: serverOutputHatCopy.building_name, level: serverOutputHatCopy.level_name, x: serverOutputHatCopy.x, y: serverOutputHatCopy.y, heading: serverOutputHatCopy.absolute_heading, tuXY: [0, 0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+        let serverOutputHatCopyMm = self.pathMatching(building: serverOutputHatCopy.building_name, level: serverOutputHatCopy.level_name, x: serverOutputHatCopy.x, y: serverOutputHatCopy.y, heading: serverOutputHatCopy.absolute_heading, tuXY: [0, 0], mode: mode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
         
         var serverOutputHatMm: FineLocationTrackingFromServer = serverOutputHatCopy
-        var timeUpdateHeadingCopy = compensateHeading(heading: timeUpdatePosition.heading, mode: self.runMode)
+        var timeUpdateHeadingCopy = compensateHeading(heading: timeUpdatePosition.heading, mode: mode)
         
         if (serverOutputHatCopyMm.isSuccess) {
             serverOutputHatMm.x = serverOutputHatCopyMm.xyh[0]
@@ -2481,31 +2650,34 @@ public class ServiceManager: Observation {
         kalmanP -= kalmanK * kalmanP
         headingKalmanP -= headingKalmanK * headingKalmanP
         
-        let measurementOutputCorrected = self.correct(building: measurementOutput.building_name, level: measurementOutput.level_name, x: measurementOutput.x, y: measurementOutput.y, heading: updateHeading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+        let measurementOutputCorrected = self.pathMatching(building: measurementOutput.building_name, level: measurementOutput.level_name, x: measurementOutput.x, y: measurementOutput.y, heading: updateHeading, tuXY: [0,0], mode: mode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
         
         if (measurementOutputCorrected.isSuccess) {
             let diffX = timeUpdatePosition.x - measurementOutputCorrected.xyh[0]
             let diffY = timeUpdatePosition.y - measurementOutputCorrected.xyh[1]
             let diffXY = sqrt(diffX*diffX + diffY*diffY)
-            
+
             if (diffXY > 30) {
                 // Use Server Result
-                self.timeUpdatePosition.x = originalResult[0]
-                self.timeUpdatePosition.y = originalResult[1]
-                self.timeUpdatePosition.heading = originalResult[2]
-                
-                measurementOutput.x = originalResult[0]
-                measurementOutput.y = originalResult[1]
-                updateHeading = originalResult[2]
-                
+                let measurementOutputCorrected = self.pathMatching(building: measurementOutput.building_name, level: measurementOutput.level_name, x: measurementOutput.x, y: measurementOutput.y, heading: updateHeading, tuXY: [0,0], mode: "pdr", isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+
+                // Use Server Result
+                self.timeUpdatePosition.x = measurementOutputCorrected.xyh[0]
+                self.timeUpdatePosition.y = measurementOutputCorrected.xyh[1]
+                self.timeUpdatePosition.heading = measurementOutputCorrected.xyh[2]
+
+                measurementOutput.x = measurementOutputCorrected.xyh[0]
+                measurementOutput.y = measurementOutputCorrected.xyh[1]
+                updateHeading = measurementOutputCorrected.xyh[2]
+
                 backKalmanParam()
             } else {
                 self.timeUpdatePosition.x = measurementOutputCorrected.xyh[0]
                 self.timeUpdatePosition.y = measurementOutputCorrected.xyh[1]
-                
+
                 measurementOutput.x = measurementOutputCorrected.xyh[0]
                 measurementOutput.y = measurementOutputCorrected.xyh[1]
-                
+
                 if (isNeedHeadingCorrection) {
                     self.timeUpdatePosition.heading = measurementOutputCorrected.xyh[2]
                     updateHeading = measurementOutputCorrected.xyh[2]
@@ -2521,15 +2693,17 @@ public class ServiceManager: Observation {
                 saveKalmanParam()
             }
         } else {
+            let measurementOutputCorrected = self.pathMatching(building: measurementOutput.building_name, level: measurementOutput.level_name, x: measurementOutput.x, y: measurementOutput.y, heading: updateHeading, tuXY: [0,0], mode: "pdr", isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+
             // Use Server Result
-            self.timeUpdatePosition.x = originalResult[0]
-            self.timeUpdatePosition.y = originalResult[1]
-            self.timeUpdatePosition.heading = originalResult[2]
-            
-            measurementOutput.x = originalResult[0]
-            measurementOutput.y = originalResult[1]
-            updateHeading = originalResult[2]
-            
+            self.timeUpdatePosition.x = measurementOutputCorrected.xyh[0]
+            self.timeUpdatePosition.y = measurementOutputCorrected.xyh[1]
+            self.timeUpdatePosition.heading = measurementOutputCorrected.xyh[2]
+
+            measurementOutput.x = measurementOutputCorrected.xyh[0]
+            measurementOutput.y = measurementOutputCorrected.xyh[1]
+            updateHeading = measurementOutputCorrected.xyh[2]
+
             backKalmanParam()
         }
         
@@ -2575,17 +2749,42 @@ public class ServiceManager: Observation {
     }
     
     // ble
-    public func trimBleData(bleData: [String: [[Double]]], nowTime: Double, validTime: Double) -> [String: [[Double]]] {
-        var bleDictonary = bleData
-        let keys: [String] = Array(bleDictonary.keys.sorted())
-        for index in 0..<keys.count {
-            let bleID: String = keys[index]
-            let bleData: [[Double]] = bleDictonary[bleID]!
-            let bleCount = bleData.count
+//    func trimBleData(bleData: [String: [[Double]]], nowTime: Double, validTime: Double) -> [String: [[Double]]] {
+//        var bleDictonary = bleData
+//        let keys: [String] = Array(bleDictonary.keys.sorted())
+//        for index in 0..<keys.count {
+//            let bleID: String = keys[index]
+//            let bleData: [[Double]] = bleDictonary[bleID]!
+//            let bleCount = bleData.count
+//            var newValue = [[Double]]()
+//            for i in 0..<bleCount {
+//                let rssi = bleData[i][0]
+//                let time = bleData[i][1]
+//
+//                if ((nowTime - time <= validTime) && (rssi >= -100)) {
+//                    let dataToAdd: [Double] = [rssi, time]
+//                    newValue.append(dataToAdd)
+//                }
+//            }
+//
+//            if ( newValue.count == 0 ) {
+//                bleDictonary.removeValue(forKey: bleID)
+//            } else {
+//                bleDictonary.updateValue(newValue, forKey: bleID)
+//            }
+//        }
+//
+//        return bleDictonary
+//    }
+    
+    func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
+        var trimmedData = [String: [[Double]]]()
+        
+        for (bleID, bleData) in bleData {
             var newValue = [[Double]]()
-            for i in 0..<bleCount {
-                let rssi = bleData[i][0]
-                let time = bleData[i][1]
+            for data in bleData {
+                let rssi = data[0]
+                let time = data[1]
                 
                 if ((nowTime - time <= validTime) && (rssi >= -100)) {
                     let dataToAdd: [Double] = [rssi, time]
@@ -2593,17 +2792,15 @@ public class ServiceManager: Observation {
                 }
             }
             
-            if ( newValue.count == 0 ) {
-                bleDictonary.removeValue(forKey: bleID)
-            } else {
-                bleDictonary.updateValue(newValue, forKey: bleID)
+            if (newValue.count > 0) {
+                trimmedData[bleID] = newValue
             }
         }
         
-        return bleDictonary
+        return trimmedData
     }
     
-    public func avgBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, Double> {
+    func avgBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, Double> {
         let digit: Double = pow(10, 2)
         var ble = [String: Double]()
         
@@ -2626,6 +2823,30 @@ public class ServiceManager: Observation {
             } else {
                 ble.updateValue(rssiFinal, forKey: bleID)
             }
+        }
+        return ble
+    }
+    
+    func isAddressValid<T>(_ address: UnsafePointer<T>) -> Bool {
+        do {
+            let value = address.pointee
+            return true
+        } catch {
+            return false
+        }
+    }
+    
+    func latestBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, Double> {
+        var ble = [String: Double]()
+        
+        let keys: [String] = Array(bleDictionary.keys)
+        for index in 0..<keys.count {
+            let bleID: String = keys[index]
+            let bleData: [[Double]] = bleDictionary[bleID]!
+            
+            let rssiFinal: Double = bleData[bleData.count-1][0]
+            
+            ble.updateValue(rssiFinal, forKey: bleID)
         }
         return ble
     }

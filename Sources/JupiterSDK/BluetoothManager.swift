@@ -155,6 +155,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                 userInfo["RSSI"] = String(format: "%d", RSSI.intValue )
                 
                 let bleTime = getCurrentTimeInMilliseconds()
+                let validTime = self.BLE_VALID_TIME
                 bleDiscoveredTime = bleTime
                 
                 if RSSI.intValue != 127 {
@@ -175,7 +176,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     } else {
                         bleScaned.updateValue([[RSSI.doubleValue, bleTime]], forKey: bleName)
                     }
-                    let bleTrimed = trimBleData(bleData: bleScaned)
+                    let bleTrimed = trimBleData(bleData: bleScaned, nowTime: bleTime, validTime: validTime)
                     self.bleDictionary = bleTrimed
                     
                     NotificationCenter.default.post(name: .scanInfo, object: nil, userInfo: userInfo)
@@ -257,77 +258,57 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         }
     }
     
-    func trimBleData(bleData: [String: [[Double]]]) -> [String: [[Double]]] {
-        let nowTime = getCurrentTimeInMilliseconds()
+//    func trimBleData(bleData: [String: [[Double]]]) -> [String: [[Double]]] {
+//        let nowTime = getCurrentTimeInMilliseconds()
+//
+//        var bleDictonary = bleData
+//        let keys: [String] = Array(bleDictonary.keys.sorted())
+//        for index in 0..<keys.count {
+//            let bleID: String = keys[index]
+//            let bleData: [[Double]] = bleDictonary[bleID]!
+//            let bleCount = bleData.count
+//            var newValue = [[Double]]()
+//            for i in 0..<bleCount {
+//                let rssi = bleData[i][0]
+//                let time = bleData[i][1]
+//
+//                if ((nowTime - time <= BLE_VALID_TIME) && (rssi >= -100)) {
+//                    let dataToAdd: [Double] = [rssi, time]
+//                    newValue.append(dataToAdd)
+//                }
+//            }
+//
+//            if ( newValue.count == 0 ) {
+//                bleDictonary.removeValue(forKey: bleID)
+//            } else {
+//                bleDictonary.updateValue(newValue, forKey: bleID)
+//            }
+//        }
+//
+//        return bleDictonary
+//    }
+    
+    func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
+        var trimmedData = [String: [[Double]]]()
         
-        var bleDictonary = bleData
-        let keys: [String] = Array(bleDictonary.keys.sorted())
-        for index in 0..<keys.count {
-            let bleID: String = keys[index]
-            let bleData: [[Double]] = bleDictonary[bleID]!
-            let bleCount = bleData.count
+        for (bleID, bleData) in bleData {
             var newValue = [[Double]]()
-            for i in 0..<bleCount {
-                let rssi = bleData[i][0]
-                let time = bleData[i][1]
+            for data in bleData {
+                let rssi = data[0]
+                let time = data[1]
                 
-                if ((nowTime - time <= BLE_VALID_TIME) && (rssi >= -100)) {
+                if ((nowTime - time <= validTime) && (rssi >= -100)) {
                     let dataToAdd: [Double] = [rssi, time]
                     newValue.append(dataToAdd)
                 }
             }
             
-            if ( newValue.count == 0 ) {
-                bleDictonary.removeValue(forKey: bleID)
-            } else {
-                bleDictonary.updateValue(newValue, forKey: bleID)
+            if (newValue.count > 0) {
+                trimmedData[bleID] = newValue
             }
         }
         
-        return bleDictonary
-    }
-    
-    func avgBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, Double> {
-        var ble = [String: Double]()
-        
-        let keys: [String] = Array(bleDictionary.keys)
-        for index in 0..<keys.count {
-            let bleID: String = keys[index]
-            let bleData: [[Double]] = bleDictionary[bleID]!
-            let bleCount = bleData.count
-            
-            var rssiSum: Double = 0
-//            print("BLE INFO :", bleCount, "/", bleID, "/", bleData)
-            
-            for i in 0..<bleCount {
-                let rssi = bleData[i][0]
-                rssiSum += rssi
-            }
-            let rssiFinal: Double = floor(((rssiSum/Double(bleData.count)) + RSSI_BIAS) * digit) / digit
-            
-            if ( rssiSum == 0 ) {
-                ble.removeValue(forKey: bleID)
-            } else {
-                ble.updateValue(rssiFinal, forKey: bleID)
-            }
-        }
-        return ble
-    }
-    
-    
-    func latestBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, Double> {
-        var ble = [String: Double]()
-        
-        let keys: [String] = Array(bleDictionary.keys)
-        for index in 0..<keys.count {
-            let bleID: String = keys[index]
-            let bleData: [[Double]] = bleDictionary[bleID]!
-            
-            let rssiFinal: Double = bleData[bleData.count-1][0]
-            
-            ble.updateValue(rssiFinal, forKey: bleID)
-        }
-        return ble
+        return trimmedData
     }
     
     func isConnected() -> Bool {

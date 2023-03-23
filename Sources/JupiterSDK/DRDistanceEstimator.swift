@@ -36,6 +36,7 @@ public class DRDistanceEstimator: NSObject {
     public var velocityScaleFactor: Double = 1.0
     
     public var distance: Double = 0
+    
     var pastTime: Int = 0
     
     var preRoll: Double = 0
@@ -128,7 +129,6 @@ public class DRDistanceEstimator: NSObject {
             magNormVar = 7
         }
         updateMagNormVarQueue(data: magNormVar)
-
 
         var magVarFeature: Double = magNormVar
         if (magNormVarQueue.count == 1) {

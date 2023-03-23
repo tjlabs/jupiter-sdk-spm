@@ -237,6 +237,7 @@ struct FineLocationTracking: Encodable {
     var spot_id: Int
     var phase: Int
     var rss_compensation_list: [Int]
+    var sc_compensation_list: [Double]
 }
 
 public struct FineLocationTrackingFromServer: Codable {
@@ -251,6 +252,7 @@ public struct FineLocationTrackingFromServer: Codable {
     public var calculated_time: Double
     public var index: Int
     public var rss_compensation: Int
+    public var sc_compensation: Double
     
     public init() {
         self.mobile_time = 0
@@ -264,6 +266,7 @@ public struct FineLocationTrackingFromServer: Codable {
         self.calculated_time = 0
         self.index = 0
         self.rss_compensation = 0
+        self.sc_compensation = 0
     }
 }
 

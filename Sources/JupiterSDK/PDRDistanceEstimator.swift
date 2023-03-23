@@ -59,9 +59,6 @@ public class PDRDistanceEstimator: NSObject {
         finalUnitResult.isIndexChanged = false
         
         if (foundAccPV.type == Type.PEAK) {
-//            normalStepCheckCount = PDF.updateNormalStepCheckCount(accPeakQueue: accPeakQueue, accValleyQueue: accValleyQueue, normalStepCheckCount: normalStepCheckCount)
-//            let isLossStep = checkIsLossStep(normalStepCount: normalStepCheckCount)
-            
             normalStepCheckCount = PDF.updateNormalStepCheckCount(accPeakQueue: accPeakQueue, accValleyQueue: accValleyQueue, normalStepCheckCount: normalStepCheckCount)
             var isLossStep = false
             if (!self.autoMode) {

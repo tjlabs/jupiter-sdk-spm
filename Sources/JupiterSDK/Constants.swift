@@ -9,10 +9,10 @@ var RF_URL = "https://where-run-record" + REGION + "/recordRF"
 var UV_URL = "https://where-run-record" + REGION + "/recordUV"
 var RECENT_URL = "https://where-run-user" + REGION + "/recent"
 
-var RELEASE_URL_i = "https://where-run-ios" + REGION + "/"
+var RELEASE_URL_i = "https://where-run-ios-2" + REGION + "/"
 var TEST_URL_i = "https://where-run-ios-t" + REGION + "/"
 
-var RELEASE_URL_A = "https://where-run-aos" + REGION + "/"
+var RELEASE_URL_A = "https://where-run-aos-2" + REGION + "/"
 var TEST_URL_A = "https://where-run-aos-t" + REGION + "/"
 
 var BASE_URL = RELEASE_URL_i
@@ -116,10 +116,10 @@ public func setBaseURL(url: String) {
     UV_URL = "https://where-run-record" + REGION + "/recordUV"
     RECENT_URL = "https://where-run-user" + REGION + "/recent"
     
-    RELEASE_URL_i = "https://where-run-ios" + REGION + "/"
+    RELEASE_URL_i = "https://where-run-ios-2" + REGION + "/"
     TEST_URL_i = "https://where-run-ios-t" + REGION + "/"
 
-    RELEASE_URL_A = "https://where-run-aos" + REGION + "/"
+    RELEASE_URL_A = "https://where-run-aos-2" + REGION + "/"
     TEST_URL_A = "https://where-run-aos-t" + REGION + "/"
 
     CLD_URL = BASE_URL + "CLD"
