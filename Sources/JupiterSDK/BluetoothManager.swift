@@ -108,7 +108,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             
             startScan(option: .Foreground)
         }
-        
     }
     
     // MARK: - CBCentralManagerDelegate
@@ -142,7 +141,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         
         discoveredPeripheral = peripheral
-        
+
         if let bleName = discoveredPeripheral.name {
             
             if bleName.contains("TJ-") {
@@ -258,36 +257,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         }
     }
     
-//    func trimBleData(bleData: [String: [[Double]]]) -> [String: [[Double]]] {
-//        let nowTime = getCurrentTimeInMilliseconds()
-//
-//        var bleDictonary = bleData
-//        let keys: [String] = Array(bleDictonary.keys.sorted())
-//        for index in 0..<keys.count {
-//            let bleID: String = keys[index]
-//            let bleData: [[Double]] = bleDictonary[bleID]!
-//            let bleCount = bleData.count
-//            var newValue = [[Double]]()
-//            for i in 0..<bleCount {
-//                let rssi = bleData[i][0]
-//                let time = bleData[i][1]
-//
-//                if ((nowTime - time <= BLE_VALID_TIME) && (rssi >= -100)) {
-//                    let dataToAdd: [Double] = [rssi, time]
-//                    newValue.append(dataToAdd)
-//                }
-//            }
-//
-//            if ( newValue.count == 0 ) {
-//                bleDictonary.removeValue(forKey: bleID)
-//            } else {
-//                bleDictonary.updateValue(newValue, forKey: bleID)
-//            }
-//        }
-//
-//        return bleDictonary
-//    }
-    
     func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
         var trimmedData = [String: [[Double]]]()
         
@@ -332,6 +301,12 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
 
             NotificationCenter.default.post(name: .startScan, object: nil)
         }
+    }
+    
+    func isBluetoothEnabled() -> Bool {
+        let peripheralManager = CBPeripheralManager()
+        let state = peripheralManager.state
+        return state == .poweredOn
     }
     
     func stopScan() {

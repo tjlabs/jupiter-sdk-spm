@@ -113,6 +113,8 @@ public class ServiceManager: Observation {
 
     var osrTimer: DispatchSourceTimer?
     var OSR_INTERVAL: TimeInterval = 2
+    var phase2Count: Int = 0
+    var SCC_FOR_PHASE4: Double = 0.65
 
     let SENSOR_INTERVAL: TimeInterval = 1/100
     var abnormalMagCount: Int = 0
@@ -531,6 +533,7 @@ public class ServiceManager: Observation {
                     }
                 }
             })
+            
             self.loadRssiBias(sector_id: self.sector_id)
             self.isActiveReturn = true
             
@@ -998,8 +1001,6 @@ public class ServiceManager: Observation {
         if (self.isActiveReturn && self.isActiveService) {
             let currentTime = getCurrentTimeInMilliseconds()
             let dt = currentTime - self.lastOutputTime
-//            let log: String = localTime + " , (JupiterService) dt = \(dt) // time = \(currentTime) // before = \(self.lastOutputTime) // x = \(resultToReturn.x) // y = \(resultToReturn.y) // phase = \(resultToReturn.phase) // level = \(resultToReturn.level_name)"
-//            print(log)
             
             var resultToReturn = self.resultToReturn
             resultToReturn.mobile_time = currentTime
@@ -1064,7 +1065,7 @@ public class ServiceManager: Observation {
         bleManager.setValidTime(mode: self.runMode)
         let validTime = bleManager.BLE_VALID_TIME
         let currentTime = getCurrentTimeInMilliseconds() - (Int(validTime)/2)
-        var bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
+        let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
         if let bleData = bleDictionary {
             let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
             let bleAvg = avgBleData(bleDictionary: bleTrimed)
@@ -1309,51 +1310,88 @@ public class ServiceManager: Observation {
                 var result = jsonToResult(json: returnedString)
                 if (result.x != 0 && result.y != 0) {
                     if (result.mobile_time > self.preOutputMobileTime) {
-//                        print(localTime + " , (Jupiter) Phase 2 Result : \(result.level_name) , \(result.phase)")
-                        if (result.phase == 1) {
-                            self.phase = result.phase
-                        } else {
-                            if (self.isVenusMode) {
-                                result.phase = 1
-                                result.absolute_heading = 0
-                            }
-                            self.phase = result.phase
-                            displayOutput.indexRx = result.index
-                            
-                            let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
-                            let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
-                            
-                            if (result.building_name != self.currentBuilding || resultLevelName != currentLevelName) {
-                                if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
-                                    // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
-                                    self.currentBuilding = result.building_name
-                                    self.currentLevel = result.level_name
-                                    
-                                    self.timeUpdateOutput.building_name = result.building_name
-                                    self.timeUpdateOutput.level_name = result.level_name
-                                    
-                                    self.measurementOutput.building_name = result.building_name
-                                    self.measurementOutput.level_name = result.level_name
-                                    
-                                    let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
-                                    self.outputResult = finalResult
-                                    
-                                    self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
-                                } else {
-                                    self.outputResult.x = result.x
-                                    self.outputResult.y = result.y
-                                    self.outputResult.absolute_heading = result.absolute_heading
-                                    
-                                    self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
-                                }
-                            }
-                            
-                            self.serverResult[0] = result.x
-                            self.serverResult[1] = result.y
-                            self.serverResult[2] = result.absolute_heading
-                            
-                            self.indexPast = result.index
+//                        print(localTime + " , (Jupiter) Phase 2 Result : \(result.level_name) , \(result.phase) , \(result.scc)")
+                        displayOutput.indexRx = result.index
+                        if (self.isVenusMode) {
+                            result.phase = 1
+                            result.absolute_heading = 0
                         }
+                        
+                        if (result.phase == 2 && result.scc < SCC_FOR_PHASE4) {
+                            self.phase2Count += 1
+                            if (self.phase2Count > 4) {
+                                self.phase = 1
+                            }
+                        } else {
+                            if (result.phase == 4) {
+                                var resultCorrected = self.pathMatching(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+                                resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
+                                
+                                self.timeUpdatePosition.x = resultCorrected.xyh[0]
+                                self.timeUpdatePosition.y = resultCorrected.xyh[1]
+                                self.timeUpdatePosition.heading = resultCorrected.xyh[2]
+
+                                self.timeUpdateOutput.x = resultCorrected.xyh[0]
+                                self.timeUpdateOutput.y = resultCorrected.xyh[1]
+                                self.timeUpdateOutput.absolute_heading = resultCorrected.xyh[2]
+                                
+                                self.measurementPosition.x = resultCorrected.xyh[0]
+                                self.measurementPosition.y = resultCorrected.xyh[1]
+                                self.measurementPosition.heading = resultCorrected.xyh[2]
+                                
+                                self.measurementOutput.x = resultCorrected.xyh[0]
+                                self.measurementOutput.y = resultCorrected.xyh[1]
+                                self.measurementOutput.absolute_heading = resultCorrected.xyh[2]
+                            }
+                            self.phase2Count = 0
+                            self.phase = result.phase
+                        }
+                        
+                        let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
+                        let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
+                        
+                        let levelArray: [String] = [resultLevelName, currentLevelName]
+                        var TIME_CONDITION = VALID_BL_CHANGE_TIME
+                        if (levelArray.contains("B0") && levelArray.contains("B2")) {
+                            TIME_CONDITION = 7000*3
+                        }
+                        
+                        if (result.building_name != self.currentBuilding || resultLevelName != currentLevelName) {
+                            if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
+                                // Building Level 이 바뀐지 7초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                                self.currentBuilding = result.building_name
+                                self.currentLevel = result.level_name
+                                
+                                self.timeUpdateOutput.building_name = result.building_name
+                                self.timeUpdateOutput.level_name = result.level_name
+                                
+                                self.measurementOutput.building_name = result.building_name
+                                self.measurementOutput.level_name = result.level_name
+                                
+                                let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
+                                self.outputResult = finalResult
+                                
+                                self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+                            } else {
+                                self.outputResult.x = result.x
+                                self.outputResult.y = result.y
+                                self.outputResult.absolute_heading = result.absolute_heading
+                                
+                                self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+                            }
+                        } else {
+                            self.outputResult.x = result.x
+                            self.outputResult.y = result.y
+                            self.outputResult.absolute_heading = result.absolute_heading
+                            
+                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+                        }
+                        
+                        self.serverResult[0] = result.x
+                        self.serverResult[1] = result.y
+                        self.serverResult[2] = result.absolute_heading
+                        
+                        self.indexPast = result.index
                     }
                     self.preOutputMobileTime = result.mobile_time
                 }
@@ -1417,7 +1455,7 @@ public class ServiceManager: Observation {
                     }
                     
                     if (result.mobile_time > self.preOutputMobileTime) {
-//                        print(localTime + " , (Jupiter) Phase 3 Result : \(result.level_name) , \(result.phase)")
+//                        print(localTime + " , (Jupiter) Phase 3 Result xc: \(result.level_name) , \(result.phase)")
                         if (!self.isGetFirstResponse) {
                             self.isGetFirstResponse = true
                             if (self.isActiveReturn) {
@@ -1443,22 +1481,39 @@ public class ServiceManager: Observation {
                                 self.timeUpdatePosition.x = resultCorrected.xyh[0]
                                 self.timeUpdatePosition.y = resultCorrected.xyh[1]
                                 self.timeUpdatePosition.heading = resultCorrected.xyh[2]
-                                
+
                                 self.timeUpdateOutput.x = resultCorrected.xyh[0]
                                 self.timeUpdateOutput.y = resultCorrected.xyh[1]
                                 self.timeUpdateOutput.absolute_heading = resultCorrected.xyh[2]
+                                
+                                self.measurementPosition.x = resultCorrected.xyh[0]
+                                self.measurementPosition.y = resultCorrected.xyh[1]
+                                self.measurementPosition.heading = resultCorrected.xyh[2]
+                                
+                                self.measurementOutput.x = resultCorrected.xyh[0]
+                                self.measurementOutput.y = resultCorrected.xyh[1]
+                                self.measurementOutput.absolute_heading = resultCorrected.xyh[2]
                                 
                                 self.outputResult.x = resultCorrected.xyh[0]
                                 self.outputResult.y = resultCorrected.xyh[1]
                                 self.outputResult.absolute_heading = resultCorrected.xyh[2]
                                 
                                 self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
-                                self.isActiveKf = true
                             }
                             
                             var resultCopy = result
+                            
+                            let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
+                            let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
+                            
+                            let levelArray: [String] = [resultLevelName, currentLevelName]
+                            var TIME_CONDITION = VALID_BL_CHANGE_TIME
+                            if (levelArray.contains("B0") && levelArray.contains("B2")) {
+                                TIME_CONDITION = 7000*3
+                            }
+                            
                             if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
-                                if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
+                                if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
                                     // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
                                     self.currentBuilding = result.building_name
                                     self.currentLevel = result.level_name
@@ -1489,8 +1544,17 @@ public class ServiceManager: Observation {
                             var timUpdateOutputCopy = self.timeUpdateOutput
                             timUpdateOutputCopy.phase = result.phase
                             
+                            let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
+                            let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
+                            
+                            let levelArray: [String] = [resultLevelName, currentLevelName]
+                            var TIME_CONDITION = VALID_BL_CHANGE_TIME
+                            if (levelArray.contains("B0") && levelArray.contains("B2")) {
+                                TIME_CONDITION = 7000*3
+                            }
+                            
                             if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
-                                if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
+                                if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
                                     // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
                                     self.currentBuilding = result.building_name
                                     self.currentLevel = result.level_name
@@ -1723,9 +1787,18 @@ public class ServiceManager: Observation {
                                         let muOutput = measurementUpdate(timeUpdatePosition: timeUpdatePosition, serverOutputHat: resultForMu, originalResult: resultCorrected.xyh, isNeedHeadingCorrection: self.isNeedHeadingCorrection, mode: self.runMode)
                                         var muResult = fromServerToResult(fromServer: muOutput, velocity: displayOutput.velocity)
                                         muResult.mobile_time = result.mobile_time
-
+                                        
+                                        let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
+                                        let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
+                                        
+                                        let levelArray: [String] = [resultLevelName, currentLevelName]
+                                        var TIME_CONDITION = VALID_BL_CHANGE_TIME
+                                        if (levelArray.contains("B0") && levelArray.contains("B2")) {
+                                            TIME_CONDITION = 7000*3
+                                        }
+                                        
                                         if (result.building_name != self.currentBuilding || result.level_name != self.currentLevel) {
-                                            if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
+                                            if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
                                                 // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
                                                 self.currentBuilding = result.building_name
                                                 self.currentLevel = result.level_name
@@ -1769,7 +1842,7 @@ public class ServiceManager: Observation {
             let localTime: String = getLocalTimeString()
             if (!self.isActiveReturn) {
                 let validTime = bleManager.BLE_VALID_TIME
-                var bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
+                let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
                 if let bleData = bleDictionary {
                     let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
                     let bleAvg = avgBleData(bleDictionary: bleTrimed)
@@ -1867,12 +1940,19 @@ public class ServiceManager: Observation {
         if (spotDistance == 0) {
             spotDistance = DEFAULT_SPOT_DISTANCE
         }
+        
+        let levelArray: [String] = [result.level_name, result.linked_level_name]
+        var TIME_CONDITION = VALID_BL_CHANGE_TIME
+        if (levelArray.contains("B0") && levelArray.contains("B2")) {
+            TIME_CONDITION = 7000*3
+        }
+        
         if (result.spot_id != lastSpotId) {
             // Different Spot Detected
             let resultLevelName: String = removeLevelDirectionString(levelName: levelDestination)
             if (result.building_name != self.currentBuilding || resultLevelName != self.currentLevel) {
-                if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
-                    // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
+                    // Building Level 이 바뀐지 7초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
                     self.currentBuilding = result.building_name
                     self.currentLevel = levelDestination
                     self.timeUpdateOutput.building_name = result.building_name
@@ -1898,8 +1978,8 @@ public class ServiceManager: Observation {
             if (self.travelingOsrDistance >= spotDistance) {
                 let resultLevelName: String = removeLevelDirectionString(levelName: levelDestination)
                 if (result.building_name != self.currentBuilding || resultLevelName != self.currentLevel) {
-                    if ((result.mobile_time - self.buildingLevelChangedTime) > VALID_BL_CHANGE_TIME) {
-                        // Building Level 이 바뀐지 10초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+                    if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
+                        // Building Level 이 바뀐지 7초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
                         self.currentBuilding = result.building_name
                         self.currentLevel = levelDestination
                         self.timeUpdateOutput.building_name = result.building_name
@@ -2640,7 +2720,7 @@ public class ServiceManager: Observation {
 
         kalmanK = kalmanP / (kalmanP + kalmanR)
         headingKalmanK = headingKalmanP / (headingKalmanP + headingKalmanR)
-
+        
         measurementPosition.x = timeUpdatePosition.x + kalmanK * (Double(serverOutputHatMm.x) - timeUpdatePosition.x)
         measurementPosition.y = timeUpdatePosition.y + kalmanK * (Double(serverOutputHatMm.y) - timeUpdatePosition.y)
         updateHeading = timeUpdateHeadingCopy + headingKalmanK * (serverOutputHatMm.absolute_heading - timeUpdateHeadingCopy)
