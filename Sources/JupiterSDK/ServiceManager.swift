@@ -100,6 +100,7 @@ public class ServiceManager: Observation {
     // ----- Timer ----- //
     var receivedForceTimer: DispatchSourceTimer?
     var RFD_INTERVAL: TimeInterval = 1/2 // second
+    var BLE_VALID_TIME: Double = 1000
 
     var userVelocityTimer: DispatchSourceTimer?
     var UVD_INTERVAL: TimeInterval = 1/40 // second
@@ -114,6 +115,7 @@ public class ServiceManager: Observation {
     var osrTimer: DispatchSourceTimer?
     var OSR_INTERVAL: TimeInterval = 2
     var phase2Count: Int = 0
+    var isEnterPhase2: Bool = false
     var SCC_FOR_PHASE4: Double = 0.65
 
     let SENSOR_INTERVAL: TimeInterval = 1/100
@@ -146,6 +148,8 @@ public class ServiceManager: Observation {
     
     public var displayOutput = ServiceResult()
     
+    var networkCount: Int = 0
+    var isNetworkConnectReported: Bool = false
     var nowTime: Int = 0
     var RECENT_THRESHOLD: Int = 10000 // 2200
     var INDEX_THRESHOLD: Int = 11
@@ -162,6 +166,8 @@ public class ServiceManager: Observation {
     
     var rssiBiasArray: [Int] = [2, 0, 4]
     var rssiBias: Int = 0
+    var isBiasConverged: Bool = false
+    var sccBadCount: Int = 0
     var scCompensationArray: [Double] = [0.8, 1.0, 1.2]
     var scCompensation: Double = 1.0
     var scCompensationBadCount: Int = 0
@@ -178,7 +184,7 @@ public class ServiceManager: Observation {
     var isScRequested: Bool = false
     
     let MINIMUN_INDEX_FOR_BIAS: Int = 30
-    let GOOD_BIAS_ARRAY_SIZE: Int = 15
+    let GOOD_BIAS_ARRAY_SIZE: Int = 30
     // --------------------------------- //
     
     
@@ -241,7 +247,9 @@ public class ServiceManager: Observation {
     var isEntered: Bool = false
     var phase4Count: Int = 0
     var isSufficientRfd: Bool = false
+    var isBleOff: Bool = false
     
+    var timeBleOff: Double = 0
     var timeActiveRF: Double = 0
     var timeActiveUV: Double = 0
     var timeEmptyRF: Double = 0
@@ -252,6 +260,7 @@ public class ServiceManager: Observation {
     let STOP_THRESHOLD: Double = 2
     let SLEEP_THRESHOLD: Double = 600
     let SLEEP_THRESHOLD_RF: Double = 6
+    let BLE_OFF_THRESHOLD: Double = 4
     
     var lastTrackingTime: Int = 0
     var lastResult = FineLocationTrackingResult()
@@ -496,12 +505,10 @@ public class ServiceManager: Observation {
                                     let requestURL = URLRequest(url: (urlComponents?.url)!)
                                     let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                                         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 500
-
                                         if (statusCode == 200) {
                                             if let responseData = data {
                                                 if let utf8Text = String(data: responseData, encoding: .utf8) {
                                                     ( self.Road[key], self.RoadHeading[key] ) = self.parseRoad(data: utf8Text)
-//                                                    self.AbnormalArea[key] = self.loadAbnormalArea(buildingName: buildingName, levelName: levelName)
                                                     self.isMapMatching = true
                                                     
                                                     let log: String = localTime + " , (Jupiter) Success : Load \(buildingName) \(levelName) Path-Point"
@@ -521,12 +528,9 @@ public class ServiceManager: Observation {
                                             let result = decodeGEO(json: returnedString)
                                             let key: String = "\(buildingGeo)_\(levelGeo)"
                                             self.AbnormalArea[key] = result.geofences
+                                            self.EntranceArea[key] = result.entrance_area
                                         }
                                     })
-                                    
-                                    // Entrance Area
-                                    let key: String = "\(buildingName)_\(levelName)"
-                                    self.EntranceArea[key] = loadEntranceArea(buildingName: buildingName, levelName: levelName)
                                 }
                             }
                         }
@@ -534,7 +538,14 @@ public class ServiceManager: Observation {
                 }
             })
             
-            self.loadRssiBias(sector_id: self.sector_id)
+            let loadedBias = self.loadRssiBias(sector_id: self.sector_id)
+            print(localTime + " , (Jupiter) Bias Load : \(loadedBias)")
+            self.rssiBias = loadedBias.0
+            self.isBiasConverged = loadedBias.1
+            
+            let biasArray = self.makeRssiBiasArray(bias: loadedBias.0)
+            self.rssiBiasArray = biasArray
+            
             self.isActiveReturn = true
             
             return (isSuccess, message)
@@ -567,7 +578,7 @@ public class ServiceManager: Observation {
         if (self.service == "FLT") {
             unitDRInfo = UnitDRInfo()
             onStartFlag = false
-            saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
+            saveRssiBias(bias: self.rssiBias, isConverged: self.isBiasConverged, sector_id: self.sector_id)
         }
         
         self.initVariables()
@@ -781,7 +792,7 @@ public class ServiceManager: Observation {
 
                         self.timeUpdateOutput = FineLocationTrackingFromServer()
                         self.measurementOutput = FineLocationTrackingFromServer()
-                        self.reporting(input: MERCURY_FLAG)
+                        self.reporting(input: VENUS_FLAG)
                     }
                 } else {
                     if (self.isVenusMode) {
@@ -997,10 +1008,8 @@ public class ServiceManager: Observation {
     }
     
     @objc func outputTimerUpdate() {
-        let localTime = getLocalTimeString()
         if (self.isActiveReturn && self.isActiveService) {
             let currentTime = getCurrentTimeInMilliseconds()
-            let dt = currentTime - self.lastOutputTime
             
             var resultToReturn = self.resultToReturn
             resultToReturn.mobile_time = currentTime
@@ -1017,7 +1026,7 @@ public class ServiceManager: Observation {
             result.absolute_heading = compensateHeading(heading: result.absolute_heading, mode: runMode)
             result.mode = runMode
             displayOutput.mode = runMode
-            
+
             // Map Matching
             if (self.isMapMatching) {
                 var mapMatchingMode: String = runMode
@@ -1062,8 +1071,21 @@ public class ServiceManager: Observation {
     
     @objc func receivedForceTimerUpdate() {
         let localTime: String = getLocalTimeString()
+        if (!bleManager.bluetoothReady) {
+            self.timeBleOff += RFD_INTERVAL
+            if (self.timeBleOff >= BLE_OFF_THRESHOLD) {
+                if (!self.isBleOff) {
+                    self.isActiveReturn = false
+                    self.isBleOff = true
+                    self.timeBleOff = 0
+                    self.reporting(input: BLE_OFF_FLAG)
+                }
+            }
+        }
+        
         bleManager.setValidTime(mode: self.runMode)
-        let validTime = bleManager.BLE_VALID_TIME
+        self.setValidTime(mode: self.runMode)
+        let validTime = self.BLE_VALID_TIME
         let currentTime = getCurrentTimeInMilliseconds() - (Int(validTime)/2)
         let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
         if let bleData = bleDictionary {
@@ -1071,12 +1093,14 @@ public class ServiceManager: Observation {
             let bleAvg = avgBleData(bleDictionary: bleTrimed)
             
             if (!bleAvg.isEmpty) {
+                self.timeBleOff = 0
                 self.timeActiveRF = 0
                 self.timeSleepRF = 0
                 self.timeEmptyRF = 0
                 
                 self.isActiveRF = true
                 self.isEmptyRF = false
+                self.isBleOff = false
                 self.isActiveService = true
                 
                 self.wakeUpFromSleepMode()
@@ -1103,12 +1127,13 @@ public class ServiceManager: Observation {
                 self.timeActiveRF += RFD_INTERVAL
                 if (self.timeActiveRF >= SLEEP_THRESHOLD_RF) {
                     self.isActiveRF = false
-                    
                     // Here
                     if (self.isActiveReturn && self.isGetFirstResponse) {
-                        self.initVariables()
-                        self.isActiveReturn = false
-                        self.reporting(input: OUTDOOR_FLAG)
+                        if (!self.isBleOff) {
+                            self.initVariables()
+                            self.isActiveReturn = false
+                            self.reporting(input: OUTDOOR_FLAG)
+                        }
                     }
                 }
                 
@@ -1320,72 +1345,87 @@ public class ServiceManager: Observation {
                         if (result.phase == 2 && result.scc < SCC_FOR_PHASE4) {
                             self.phase2Count += 1
                             if (self.phase2Count > 4) {
+                                self.phase2Count = 0
                                 self.phase = 1
                             }
                         } else {
-                            if (result.phase == 4) {
-                                var resultCorrected = self.pathMatching(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
-                                resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
-                                
-                                self.timeUpdatePosition.x = resultCorrected.xyh[0]
-                                self.timeUpdatePosition.y = resultCorrected.xyh[1]
-                                self.timeUpdatePosition.heading = resultCorrected.xyh[2]
+                            let resultHeading = compensateHeading(heading: result.absolute_heading, mode: self.runMode)
+                            var resultCorrected = self.pathMatching(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: resultHeading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
+                            resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
+                            
+                            self.timeUpdatePosition.x = resultCorrected.xyh[0]
+                            self.timeUpdatePosition.y = resultCorrected.xyh[1]
+//                            self.timeUpdatePosition.heading = resultCorrected.xyh[2]
 
-                                self.timeUpdateOutput.x = resultCorrected.xyh[0]
-                                self.timeUpdateOutput.y = resultCorrected.xyh[1]
-                                self.timeUpdateOutput.absolute_heading = resultCorrected.xyh[2]
-                                
-                                self.measurementPosition.x = resultCorrected.xyh[0]
-                                self.measurementPosition.y = resultCorrected.xyh[1]
-                                self.measurementPosition.heading = resultCorrected.xyh[2]
-                                
-                                self.measurementOutput.x = resultCorrected.xyh[0]
-                                self.measurementOutput.y = resultCorrected.xyh[1]
-                                self.measurementOutput.absolute_heading = resultCorrected.xyh[2]
+                            self.timeUpdateOutput.x = resultCorrected.xyh[0]
+                            self.timeUpdateOutput.y = resultCorrected.xyh[1]
+//                            self.timeUpdateOutput.absolute_heading = resultCorrected.xyh[2]
+                            
+                            self.measurementPosition.x = resultCorrected.xyh[0]
+                            self.measurementPosition.y = resultCorrected.xyh[1]
+//                            self.measurementPosition.heading = resultCorrected.xyh[2]
+                            
+                            self.measurementOutput.x = resultCorrected.xyh[0]
+                            self.measurementOutput.y = resultCorrected.xyh[1]
+//                            self.measurementOutput.absolute_heading = resultCorrected.xyh[2]
+                            
+                            self.outputResult.x = resultCorrected.xyh[0]
+                            self.outputResult.y = resultCorrected.xyh[1]
+//                            self.outputResult.absolute_heading = result.absolute_heading
+                            
+                            if (result.phase == 4) {
+                                self.phase2Count = 0
+                                self.isEnterPhase2 = true
+//                                self.timeUpdatePosition.heading = resultCorrected.xyh[2]
+//                                self.timeUpdateOutput.absolute_heading = resultCorrected.xyh[2]
+//                                self.measurementPosition.heading = resultCorrected.xyh[2]
+//                                self.measurementOutput.absolute_heading = resultCorrected.xyh[2]
+//                                self.outputResult.absolute_heading = resultHeading
                             }
-                            self.phase2Count = 0
+                            
+                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                             self.phase = result.phase
                         }
                         
-                        let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
-                        let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
+//                        let resultLevelName = removeLevelDirectionString(levelName: result.level_name)
+//                        let currentLevelName = removeLevelDirectionString(levelName: self.currentLevel)
+//
+//                        let levelArray: [String] = [resultLevelName, currentLevelName]
+//                        var TIME_CONDITION = VALID_BL_CHANGE_TIME
+//                        if (levelArray.contains("B0") && levelArray.contains("B2")) {
+//                            TIME_CONDITION = 7000*3
+//                        }
                         
-                        let levelArray: [String] = [resultLevelName, currentLevelName]
-                        var TIME_CONDITION = VALID_BL_CHANGE_TIME
-                        if (levelArray.contains("B0") && levelArray.contains("B2")) {
-                            TIME_CONDITION = 7000*3
-                        }
-                        
-                        if (result.building_name != self.currentBuilding || resultLevelName != currentLevelName) {
-                            if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
-                                // Building Level 이 바뀐지 7초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
-                                self.currentBuilding = result.building_name
-                                self.currentLevel = result.level_name
-                                
-                                self.timeUpdateOutput.building_name = result.building_name
-                                self.timeUpdateOutput.level_name = result.level_name
-                                
-                                self.measurementOutput.building_name = result.building_name
-                                self.measurementOutput.level_name = result.level_name
-                                
-                                let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
-                                self.outputResult = finalResult
-                                
-                                self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
-                            } else {
-                                self.outputResult.x = result.x
-                                self.outputResult.y = result.y
-                                self.outputResult.absolute_heading = result.absolute_heading
-                                
-                                self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
-                            }
-                        } else {
-                            self.outputResult.x = result.x
-                            self.outputResult.y = result.y
-                            self.outputResult.absolute_heading = result.absolute_heading
-                            
-                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
-                        }
+//                        if (result.building_name != self.currentBuilding || resultLevelName != currentLevelName) {
+//                            if ((result.mobile_time - self.buildingLevelChangedTime) > TIME_CONDITION) {
+//                                // Building Level 이 바뀐지 7초 이상 지남 -> 서버 결과를 이용해 바뀌어야 한다고 판단
+//                                self.currentBuilding = result.building_name
+//                                self.currentLevel = result.level_name
+//
+//                                self.timeUpdateOutput.building_name = result.building_name
+//                                self.timeUpdateOutput.level_name = result.level_name
+//
+//                                self.measurementOutput.building_name = result.building_name
+//                                self.measurementOutput.level_name = result.level_name
+//
+//                                let finalResult = fromServerToResult(fromServer: result, velocity: displayOutput.velocity)
+//                                self.outputResult = finalResult
+//
+//                                self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+//                            } else {
+//                                self.outputResult.x = result.x
+//                                self.outputResult.y = result.y
+//                                self.outputResult.absolute_heading = result.absolute_heading
+//
+//                                self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+//                            }
+//                        } else {
+//                            self.outputResult.x = result.x
+//                            self.outputResult.y = result.y
+//                            self.outputResult.absolute_heading = result.absolute_heading
+//
+//                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+//                        }
                         
                         self.serverResult[0] = result.x
                         self.serverResult[1] = result.y
@@ -1404,27 +1444,35 @@ public class ServiceManager: Observation {
     
     private func processPhase3(currentTime: Int, localTime: String) {
         var requestBiasArray: [Int] = [self.rssiBias]
-        if (self.isPossibleEstBias) {
-            if (self.isBiasRequested) {
-                requestBiasArray = [self.rssiBias]
-            } else {
-                if (!self.isActiveKf && self.isSufficientRfd) {
-                    requestBiasArray = self.rssiBiasArray
-                    self.biasRequestTime = currentTime
-                    self.isBiasRequested = true
-                } else if (self.phase > 2 && self.isSufficientRfd) {
-                    requestBiasArray = self.rssiBiasArray
-                    self.biasRequestTime = currentTime
-                    self.isBiasRequested = true
-                } else {
+        if (self.isBiasConverged) {
+            requestBiasArray = [self.rssiBias]
+            self.isBiasRequested = false
+        } else {
+            if (self.isPossibleEstBias) {
+                if (self.isBiasRequested) {
                     requestBiasArray = [self.rssiBias]
+                } else {
+                    if (!self.isActiveKf && self.isSufficientRfd) {
+                        requestBiasArray = self.rssiBiasArray
+                        self.biasRequestTime = currentTime
+                        self.isBiasRequested = true
+                    } else if (self.phase > 2 && self.isSufficientRfd) {
+                        requestBiasArray = self.rssiBiasArray
+                        self.biasRequestTime = currentTime
+                        self.isBiasRequested = true
+                    } else {
+                        requestBiasArray = [self.rssiBias]
+                    }
                 }
             }
         }
         
+        self.phase2Count = 0
         let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray, sc_compensation_list: [1.0])
 //        print(localTime + " , (Jupiter) Phase 3 Input : \(input.level_name)")
+        self.networkCount += 1
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
+            self.networkCount = 0
             if (statusCode == 200) {
                 let result = jsonToResult(json: returnedString)
                 if (result.x != 0 && result.y != 0) {
@@ -1442,8 +1490,8 @@ public class ServiceManager: Observation {
                                     let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
                                     self.sccGoodBiasArray.remove(at: 0)
                                     self.rssiBias = biasAvg
-
-                                    self.saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
+                                    self.isBiasConverged = true
+                                    self.saveRssiBias(bias: self.rssiBias, isConverged: self.isBiasConverged, sector_id: self.sector_id)
                                 }
                             }
                             
@@ -1455,7 +1503,7 @@ public class ServiceManager: Observation {
                     }
                     
                     if (result.mobile_time > self.preOutputMobileTime) {
-//                        print(localTime + " , (Jupiter) Phase 3 Result xc: \(result.level_name) , \(result.phase)")
+//                        print(localTime + " , (Jupiter) Phase 3 Result : \(result.level_name) , \(result.phase)")
                         if (!self.isGetFirstResponse) {
                             self.isGetFirstResponse = true
                             if (self.isActiveReturn) {
@@ -1463,6 +1511,19 @@ public class ServiceManager: Observation {
                             }
                         }
                         displayOutput.indexRx = result.index
+                        
+                        // Check Bias Re-estimation is needed
+                        if (self.isBiasConverged) {
+                            if (result.scc < 0.4) {
+                                self.sccBadCount += 1
+                                if (self.sccBadCount > 1) {
+                                    reEstimateRssiBias()
+                                    self.sccBadCount = 0
+                                }
+                            } else {
+                                self.sccBadCount = 0
+                            }
+                        }
                         
                         var resultCorrected = self.pathMatching(building: result.building_name, level: result.level_name, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], mode: self.runMode, isPast: false, HEADING_RANGE: self.HEADING_RANGE)
                         resultCorrected.xyh[2] = compensateHeading(heading: resultCorrected.xyh[2], mode: self.runMode)
@@ -1604,19 +1665,25 @@ public class ServiceManager: Observation {
         var requestBiasArray: [Int] = [self.rssiBias]
         var requestScArray: [Double] = [self.scCompensation]
         
-        if (self.isPossibleEstBias) {
-            if (self.isBiasRequested) {
-                requestBiasArray = [self.rssiBias]
-            } else {
-                if (self.isSufficientRfd) {
-                    requestBiasArray = self.rssiBiasArray
-                    self.biasRequestTime = currentTime
-                    self.isBiasRequested = true
-                } else {
+        if (self.isBiasConverged) {
+            requestBiasArray = [self.rssiBias]
+            self.isBiasRequested = false
+        } else {
+            if (self.isPossibleEstBias) {
+                if (self.isBiasRequested) {
                     requestBiasArray = [self.rssiBias]
+                } else {
+                    if (self.isSufficientRfd) {
+                        requestBiasArray = self.rssiBiasArray
+                        self.biasRequestTime = currentTime
+                        self.isBiasRequested = true
+                    } else {
+                        requestBiasArray = [self.rssiBias]
+                    }
                 }
             }
         }
+        
         
         // 사이즈 검사
         // 3개 -> scCompensation 불가능 -> 여기는 무조건 1개 보냄
@@ -1631,7 +1698,9 @@ public class ServiceManager: Observation {
             }
         }
         let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name: self.currentLevel, spot_id: self.currentSpot, phase: self.phase, rss_compensation_list: requestBiasArray, sc_compensation_list: requestScArray)
+        self.networkCount += 1
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
+            self.networkCount = 0
             if (statusCode == 200) {
                 let result = jsonToResult(json: returnedString)
                 // Bias Compensation
@@ -1649,8 +1718,8 @@ public class ServiceManager: Observation {
                                 let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
                                 self.sccGoodBiasArray.remove(at: 0)
                                 self.rssiBias = biasAvg
-
-                                self.saveRssiBias(bias: self.rssiBias, sector_id: self.sector_id)
+                                self.isBiasConverged = true
+                                self.saveRssiBias(bias: self.rssiBias, isConverged: self.isBiasConverged, sector_id: self.sector_id)
                             }
                         }
                         self.isBiasRequested = false
@@ -1744,19 +1813,38 @@ public class ServiceManager: Observation {
 
                                         var currentTuResult = self.currentTuResult
                                         var pastTuResult = self.pastTuResult
+                                        
+                                        var dx: Double = 0
+                                        var dy: Double = 0
+                                        var dh: Double = 0
+                                        
                                         if (currentTuResult.mobile_time != 0 && pastTuResult.mobile_time != 0) {
-                                            var dx: Double = 0
-                                            var dy: Double = 0
-                                            var dh: Double = 0
-                                            
-                                            if let idx = indexBuffer.firstIndex(of: result.index) {
-                                                if ( sqrt((dx*dx) + (dy*dy)) < 15 ) {
-                                                    dx = currentTuResult.x - tuBuffer[idx][0]
-                                                    dy = currentTuResult.y - tuBuffer[idx][1]
-                                                    currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
-                                                    let tuBufferHeading = compensateHeading(heading: tuBuffer[idx][2], mode: self.runMode)
+                                            if (self.isEnterPhase2) {
+                                                self.isEnterPhase2 = false
+                                                
+                                                dx = currentTuResult.x - pastTuResult.x
+                                                dy = currentTuResult.y - pastTuResult.y
+                                                currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
+                                                pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading, mode: self.runMode)
 
-                                                    dh = currentTuResult.absolute_heading - tuBufferHeading
+                                                dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
+                                            } else {
+                                                if let idx = indexBuffer.firstIndex(of: result.index) {
+                                                    if ( sqrt((dx*dx) + (dy*dy)) < 15 ) {
+                                                        dx = currentTuResult.x - tuBuffer[idx][0]
+                                                        dy = currentTuResult.y - tuBuffer[idx][1]
+                                                        currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
+                                                        let tuBufferHeading = compensateHeading(heading: tuBuffer[idx][2], mode: self.runMode)
+
+                                                        dh = currentTuResult.absolute_heading - tuBufferHeading
+                                                    } else {
+                                                        dx = currentTuResult.x - pastTuResult.x
+                                                        dy = currentTuResult.y - pastTuResult.y
+                                                        currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
+                                                        pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading, mode: self.runMode)
+
+                                                        dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
+                                                    }
                                                 } else {
                                                     dx = currentTuResult.x - pastTuResult.x
                                                     dy = currentTuResult.y - pastTuResult.y
@@ -1765,13 +1853,6 @@ public class ServiceManager: Observation {
 
                                                     dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
                                                 }
-                                            } else {
-                                                dx = currentTuResult.x - pastTuResult.x
-                                                dy = currentTuResult.y - pastTuResult.y
-                                                currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading, mode: self.runMode)
-                                                pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading, mode: self.runMode)
-
-                                                dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
                                             }
 
                                             resultForMu.x = resultCorrected.xyh[0] + dx
@@ -1822,7 +1903,10 @@ public class ServiceManager: Observation {
 
                                 self.kalmanR = 0.01
                                 self.headingKalmanR = 0.01
-
+                                
+                                self.indexAfterResponse = 0
+                                self.isPossibleEstBias = false
+                                
                                 self.isPhaseBreak = true
                             }
                         }
@@ -1841,7 +1925,7 @@ public class ServiceManager: Observation {
         if (self.isGetFirstResponse) {
             let localTime: String = getLocalTimeString()
             if (!self.isActiveReturn) {
-                let validTime = bleManager.BLE_VALID_TIME
+                let validTime = self.BLE_VALID_TIME
                 let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
                 if let bleData = bleDictionary {
                     let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
@@ -1884,6 +1968,20 @@ public class ServiceManager: Observation {
         } else {
             self.travelingOsrDistance = 0
         }
+        
+        if (self.networkCount >= 5 && NetworkCheck.shared.isConnectedToInternet()) {
+            self.reporting(input: NETWORK_WAITING_FLAG)
+        }
+        
+        if (NetworkCheck.shared.isConnectedToInternet()) {
+            self.isNetworkConnectReported = false
+        } else {
+            self.networkCount = 0
+            if (!self.isNetworkConnectReported) {
+                self.isNetworkConnectReported = true
+                self.reporting(input: NETWORK_CONNECTION_FLAG)
+            }
+        }
     }
     
     func isOnSpotRecognition(result: OnSpotRecognitionResult, level: String) -> (isOn: Bool, levelDestination: String, levelDirection: String) {
@@ -1902,7 +2000,6 @@ public class ServiceManager: Observation {
         } else {
             if (self.currentLevel == "") {
                 isOn = false
-                self.reporting(input: ABNORMAL_FLAG)
                 return (isOn, "", "")
             }
             
@@ -2054,15 +2151,17 @@ public class ServiceManager: Observation {
         }
         
         for i in 0..<abnormalArea.count {
-            let xMin = abnormalArea[i][0]
-            let yMin = abnormalArea[i][1]
-            let xMax = abnormalArea[i][2]
-            let yMax = abnormalArea[i][3]
-            
-            if (lastResult.x >= xMin && lastResult.x <= xMax) {
-                if (lastResult.y >= yMin && lastResult.y <= yMax) {
-                    velocityScaleFactor = abnormalArea[i][4]
-                    return velocityScaleFactor
+            if (!abnormalArea[i].isEmpty) {
+                let xMin = abnormalArea[i][0]
+                let yMin = abnormalArea[i][1]
+                let xMax = abnormalArea[i][2]
+                let yMax = abnormalArea[i][3]
+                
+                if (lastResult.x >= xMin && lastResult.x <= xMax) {
+                    if (lastResult.y >= yMin && lastResult.y <= yMax) {
+                        velocityScaleFactor = abnormalArea[i][4]
+                        return velocityScaleFactor
+                    }
                 }
             }
         }
@@ -2071,7 +2170,6 @@ public class ServiceManager: Observation {
     }
     
     func checkIsEntranceLevel(result: FineLocationTrackingResult) -> Bool {
-        let localTime = getLocalTimeString()
         let lastResult = result
         
         let buildingName = lastResult.building_name
@@ -2086,23 +2184,45 @@ public class ServiceManager: Observation {
             }
             
             for i in 0..<entranceArea.count {
-                let xMin = entranceArea[i][0]
-                let yMin = entranceArea[i][1]
-                let xMax = entranceArea[i][2]
-                let yMax = entranceArea[i][3]
-                
-                if (lastResult.x >= xMin && lastResult.x <= xMax) {
-                    if (lastResult.y >= yMin && lastResult.y <= yMax) {
-                        return true
+                if (!entranceArea[i].isEmpty) {
+                    let xMin = entranceArea[i][0]
+                    let yMin = entranceArea[i][1]
+                    let xMax = entranceArea[i][2]
+                    let yMax = entranceArea[i][3]
+                    
+                    if (lastResult.x >= xMin && lastResult.x <= xMax) {
+                        if (lastResult.y >= yMin && lastResult.y <= yMax) {
+                            return true
+                        }
                     }
                 }
+                
             }
             
             return false
         }
     }
     
-    func saveRssiBias(bias: Int, sector_id: Int) {
+    func saveRssiBias(bias: Int, isConverged: Bool, sector_id: Int) {
+        let currentTime = getCurrentTimeInMilliseconds()
+        
+        // Time
+        do {
+            let key: String = "JupiterRssiBiasTime_\(sector_id)"
+            UserDefaults.standard.set(currentTime, forKey: key)
+        } catch {
+            print("(Jupiter) Error : Fail to save RssiBiasTime")
+        }
+        
+        // Converged
+        do {
+            let key: String = "JupiterRssiBiasConverge_\(sector_id)"
+            UserDefaults.standard.set(isConverged, forKey: key)
+        } catch {
+            print("(Jupiter) Error : Fail to save RssiBiasConverge")
+        }
+        
+        // Bias
         do {
             let key: String = "JupiterRssiBias_\(sector_id)"
             UserDefaults.standard.set(bias, forKey: key)
@@ -2111,29 +2231,60 @@ public class ServiceManager: Observation {
         }
     }
     
-    func loadRssiBias(sector_id: Int) {
+    func loadRssiBias(sector_id: Int) -> (Int, Bool) {
+        var bias: Int = 2
+        var isConverged: Bool = false
+        
+        let currentTime = getCurrentTimeInMilliseconds()
+        let keyBiasTime: String = "JupiterRssiBiasTime_\(sector_id)"
+        if let biasTime: Int = UserDefaults.standard.object(forKey: keyBiasTime) as? Int {
+            // 7 Day
+            if (currentTime - biasTime) > 1000*3600*24*7  {
+                return (bias, isConverged)
+            }
+        }
+        
+        let keyBiasConverged: String = "JupiterRssiBiasConverge_\(sector_id)"
+        if let biasConverged: Bool = UserDefaults.standard.object(forKey: keyBiasConverged) as? Bool {
+            isConverged = biasConverged
+        }
+        
         let keyBias: String = "JupiterRssiBias_\(sector_id)"
         if let loadedRssiBias: Int = UserDefaults.standard.object(forKey: keyBias) as? Int {
-            self.rssiBias = loadedRssiBias
-            
-            let biasRange: Int = 3
-            var biasArray: [Int] = [loadedRssiBias, loadedRssiBias-biasRange, loadedRssiBias+biasRange]
-            if (biasArray[1] <= BIAS_RANGE_MIN) {
-                biasArray[1] = BIAS_RANGE_MIN
-                biasArray[0] = BIAS_RANGE_MIN + biasRange
-                biasArray[2] = BIAS_RANGE_MIN + (2*biasRange)
-                if (biasArray[2] > BIAS_RANGE_MAX) {
-                    biasArray[2] = BIAS_RANGE_MAX
-                }
-                
-            } else if (biasArray[2] >= BIAS_RANGE_MAX) {
+            bias = loadedRssiBias
+        }
+        
+        return (bias, isConverged)
+    }
+    
+    func makeRssiBiasArray(bias: Int) -> [Int] {
+        let loadedRssiBias: Int = bias
+        let biasRange: Int = 3
+        var biasArray: [Int] = [loadedRssiBias, loadedRssiBias-biasRange, loadedRssiBias+biasRange]
+        
+        if (biasArray[1] <= BIAS_RANGE_MIN) {
+            biasArray[1] = BIAS_RANGE_MIN
+            biasArray[0] = BIAS_RANGE_MIN + biasRange
+            biasArray[2] = BIAS_RANGE_MIN + (2*biasRange)
+            if (biasArray[2] > BIAS_RANGE_MAX) {
                 biasArray[2] = BIAS_RANGE_MAX
-                biasArray[0] = BIAS_RANGE_MAX - biasRange
-                biasArray[1] = BIAS_RANGE_MAX - (2*biasRange)
             }
             
-            self.rssiBiasArray = biasArray
+        } else if (biasArray[2] >= BIAS_RANGE_MAX) {
+            biasArray[2] = BIAS_RANGE_MAX
+            biasArray[0] = BIAS_RANGE_MAX - biasRange
+            biasArray[1] = BIAS_RANGE_MAX - (2*biasRange)
         }
+        
+        return biasArray
+    }
+    
+    func reEstimateRssiBias() {
+        print(getLocalTimeString() + " , (Jupiter) Bias is not correct -> Initialization")
+        self.isBiasConverged = false
+        self.rssiBias = 2
+        self.rssiBiasArray = [2, 0, 4]
+        self.sccGoodBiasArray = [Int]()
     }
     
     func estimateRssiBias(sccResult: Double, biasResult: Int, biasArray: [Int]) -> (Bool, [Int]) {
@@ -2144,11 +2295,22 @@ public class ServiceManager: Observation {
         let diffScc: Double = SCC_MAX - sccResult
 
         newBiasArray[0] = biasStandard
-
-        var biasRange: Int = Int(round(diffScc*10))
-        if (biasRange < 1) {
+        
+        var biasRange: Int = 1
+        if (diffScc < 0.1) {
             biasRange = 1
+        } else if (diffScc < 0.18) {
+            biasRange = 2
+        } else if (diffScc < 0.25) {
+            biasRange = 3
+        } else {
+            biasRange = 5
         }
+
+//        var biasRange: Int = Int(round(diffScc*10))
+//        if (biasRange < 1) {
+//            biasRange = 1
+//        }
         
         if (sccResult < SCC_THRESHOLD) {
             let biasMinus: Int = biasStandard - biasRange
@@ -2183,7 +2345,7 @@ public class ServiceManager: Observation {
     }
     
     func estimateScCompensation(sccResult: Double, scResult: Double, scArray: [Double]) -> [Double] {
-        var newBiasArray: [Double] = scArray
+        let newBiasArray: [Double] = scArray
         
         return newBiasArray
     }
@@ -2217,9 +2379,9 @@ public class ServiceManager: Observation {
     
     @objc func collectTimerUpdate() {
         let localTime = getLocalTimeString()
-        let validTime = bleManager.BLE_VALID_TIME
+        let validTime = self.BLE_VALID_TIME
         let currentTime = getCurrentTimeInMilliseconds()
-        var bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
+        let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
         if let bleData = bleDictionary {
             let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
             let bleAvg = avgBleData(bleDictionary: bleTrimed)
@@ -2341,33 +2503,13 @@ public class ServiceManager: Observation {
         return (road, roadHeading)
     }
     
-    private func loadAbnormalArea(buildingName: String, levelName: String) -> [[Double]] {
-        var abnormalArea = [[Double]]()
-        let key: String = "\(buildingName)_\(levelName)"
-        if (key == "COEX_B2") {
-            abnormalArea.append([115, 291, 165, 303, 0.8])
-            abnormalArea.append([247, 263, 296, 305, 0.8])
-            abnormalArea.append([34, 186, 100, 198, 1.6])
-            abnormalArea.append([179, 7, 191, 32, 1.5])
-            abnormalArea.append([195, 122, 225, 134, 1.5])
-            abnormalArea.append([78, 99, 145, 111, 1.5])
-            abnormalArea.append([214, 383, 226, 410, 0.8])
-        } else if (key == "COEX_B3") {
-            abnormalArea.append([214, 412, 226, 446, 0.8])
-        } else if (key == "COEX_B4") {
-            abnormalArea.append([214, 412, 226, 446, 0.8])
-        }
-        
-        return abnormalArea
-    }
-    
     private func loadEntranceArea(buildingName: String, levelName: String) -> [[Double]] {
         var entranceArea = [[Double]]()
         let key: String = "\(buildingName)_\(levelName)"
         if (key == "COEX_B2") {
             entranceArea.append([225, 395, 262, 420])
             entranceArea.append([247, 263, 296, 290])
-            entranceArea.append([20, 360, 67, 396])
+            entranceArea.append([14, 360, 67, 396])
             entranceArea.append([265, 0, 298, 29])
             entranceArea.append([241, 154, 257, 185])
         } else if (key == "COEX_B3") {
@@ -2596,7 +2738,7 @@ public class ServiceManager: Observation {
     
     func setModeParam(mode: String, phase: Int) {
         if (mode == "pdr") {
-            self.kalmanR = 3
+            self.kalmanR = 0.5
             self.INIT_INPUT_NUM = 3
             self.VALUE_INPUT_NUM = 5
             self.SQUARE_RANGE = self.SQUARE_RANGE_SMALL
@@ -2828,35 +2970,15 @@ public class ServiceManager: Observation {
         return headingToReturn
     }
     
-    // ble
-//    func trimBleData(bleData: [String: [[Double]]], nowTime: Double, validTime: Double) -> [String: [[Double]]] {
-//        var bleDictonary = bleData
-//        let keys: [String] = Array(bleDictonary.keys.sorted())
-//        for index in 0..<keys.count {
-//            let bleID: String = keys[index]
-//            let bleData: [[Double]] = bleDictonary[bleID]!
-//            let bleCount = bleData.count
-//            var newValue = [[Double]]()
-//            for i in 0..<bleCount {
-//                let rssi = bleData[i][0]
-//                let time = bleData[i][1]
-//
-//                if ((nowTime - time <= validTime) && (rssi >= -100)) {
-//                    let dataToAdd: [Double] = [rssi, time]
-//                    newValue.append(dataToAdd)
-//                }
-//            }
-//
-//            if ( newValue.count == 0 ) {
-//                bleDictonary.removeValue(forKey: bleID)
-//            } else {
-//                bleDictonary.updateValue(newValue, forKey: bleID)
-//            }
-//        }
-//
-//        return bleDictonary
-//    }
+    func setValidTime(mode: String) {
+        if (mode == "dr") {
+            self.BLE_VALID_TIME = 1000
+        } else {
+            self.BLE_VALID_TIME = 1500
+        }
+    }
     
+    // BLUETOOTH //
     func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
         var trimmedData = [String: [[Double]]]()
         
@@ -2905,15 +3027,6 @@ public class ServiceManager: Observation {
             }
         }
         return ble
-    }
-    
-    func isAddressValid<T>(_ address: UnsafePointer<T>) -> Bool {
-        do {
-            let value = address.pointee
-            return true
-        } catch {
-            return false
-        }
     }
     
     func latestBleData(bleDictionary: Dictionary<String, [[Double]]>) -> Dictionary<String, Double> {

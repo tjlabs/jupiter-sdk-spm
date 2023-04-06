@@ -303,12 +303,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         }
     }
     
-    func isBluetoothEnabled() -> Bool {
-        let peripheralManager = CBPeripheralManager()
-        let state = peripheralManager.state
-        return state == .poweredOn
-    }
-    
     func stopScan() {
         self.centralManager.stopScan()
         

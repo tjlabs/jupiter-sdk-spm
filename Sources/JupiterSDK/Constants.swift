@@ -9,10 +9,10 @@ var RF_URL = "https://where-run-record" + REGION + "/recordRF"
 var UV_URL = "https://where-run-record" + REGION + "/recordUV"
 var RECENT_URL = "https://where-run-user" + REGION + "/recent"
 
-var RELEASE_URL_i = "https://where-run-ios-2" + REGION + "/"
+var RELEASE_URL_i = "https://where-run-ios" + REGION + "/"
 var TEST_URL_i = "https://where-run-ios-t" + REGION + "/"
 
-var RELEASE_URL_A = "https://where-run-aos-2" + REGION + "/"
+var RELEASE_URL_A = "https://where-run-aos" + REGION + "/"
 var TEST_URL_A = "https://where-run-aos-t" + REGION + "/"
 
 var BASE_URL = RELEASE_URL_i
@@ -116,10 +116,10 @@ public func setBaseURL(url: String) {
     UV_URL = "https://where-run-record" + REGION + "/recordUV"
     RECENT_URL = "https://where-run-user" + REGION + "/recent"
     
-    RELEASE_URL_i = "https://where-run-ios-2" + REGION + "/"
+    RELEASE_URL_i = "https://where-run-ios" + REGION + "/"
     TEST_URL_i = "https://where-run-ios-t" + REGION + "/"
 
-    RELEASE_URL_A = "https://where-run-aos-2" + REGION + "/"
+    RELEASE_URL_A = "https://where-run-aos" + REGION + "/"
     TEST_URL_A = "https://where-run-aos-t" + REGION + "/"
 
     CLD_URL = BASE_URL + "CLD"
@@ -129,17 +129,4 @@ public func setBaseURL(url: String) {
     OSA_URL = BASE_URL + "OSA"
     OSR_URL = BASE_URL + "OSR"
     GEO_URL = BASE_URL + "GEO"
-    
-//    print("(Jupiter) USER_URL Changed : \(USER_URL)")
-//    print("(Jupiter) RF_URL Changed : \(RF_URL)")
-//    print("(Jupiter) UV_URL Changed : \(UV_URL)")
-//    print("(Jupiter) BASE_URL Changed : \(BASE_URL)")
-//    print("(Jupiter) FLT_URL Changed : \(FLT_URL)")
-    
-//    CLD_URL = url + "CLD"
-//    CLE_URL = url + "CLE"
-//    FLT_URL = url + "FLT"
-//    CLC_URL = url + "CLC"
-//    OSA_URL = url + "OSA"
-//    OSR_URL = url + "OSR"
 }

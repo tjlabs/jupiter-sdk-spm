@@ -378,9 +378,11 @@ public struct Geo: Encodable {
 
 public struct GeoResult: Codable {
     var geofences: [[Double]]
+    var entrance_area: [[Double]]
     
     public init() {
         self.geofences = [[]]
+        self.entrance_area = [[]]
     }
 }
 

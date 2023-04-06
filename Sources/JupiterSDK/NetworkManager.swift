@@ -3,6 +3,8 @@ import Foundation
 public class NetworkManager {
     
     static let shared = NetworkManager()
+    let TIMEOUT_VALUE_PUT: Double = 2.0
+    let TIMEOUT_VALUE_POST: Double = 5.0
     
     func putReceivedForce(url: String, input: [ReceivedForce], completion: @escaping (Int, String) -> Void){
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
@@ -22,8 +24,12 @@ public class NetworkManager {
     //        print("PUT RF 데이터 :: ", input)
     //        print("====================================")
     //        print("")
-
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_PUT
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 // [error가 존재하면 종료]
                 guard error == nil else {
                     completion(500, error?.localizedDescription ?? "Fail")
@@ -80,8 +86,11 @@ public class NetworkManager {
     //        print("====================================")
     //        print("")
             
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
-
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_PUT
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 // [error가 존재하면 종료]
                 guard error == nil else {
                     completion(500, error?.localizedDescription ?? "Fail")
@@ -132,7 +141,11 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 
                 // [error가 존재하면 종료]
                 guard error == nil else {
@@ -186,7 +199,11 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 
     //            print("")
     //            print("====================================")
@@ -246,7 +263,11 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 
                 // [error가 존재하면 종료]
                 guard error == nil else {
@@ -303,15 +324,18 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-    //        print("")
-    //        print("====================================")
-    //        print("POST FLT URL :: ", url)
-    //        print("POST FLT 데이터 :: ", input)
-    //        print("====================================")
-    //        print("")
-
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
-
+//            print("")
+//            print("====================================")
+//            print("POST FLT URL :: ", url)
+//            print("POST FLT 데이터 :: ", input)
+//            print("====================================")
+//            print("")
+            
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 // [error가 존재하면 종료]
                 guard error == nil else {
                     // [콜백 반환]
@@ -342,12 +366,12 @@ public class NetworkManager {
 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-    //                print("")
-    //                print("====================================")
-    //                print("RESPONSE FLT 데이터 :: ", resultCode)
-    //                print("                 :: ", resultData)
-    //                print("====================================")
-    //                print("")
+//                    print("")
+//                    print("====================================")
+//                    print("RESPONSE FLT 데이터 :: ", resultCode)
+//                    print("                 :: ", resultData)
+//                    print("====================================")
+//                    print("")
                     completion(resultCode, resultData)
                 }
             })
@@ -371,7 +395,11 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 
                 // [error가 존재하면 종료]
                 guard error == nil else {
@@ -432,8 +460,11 @@ public class NetworkManager {
     //        print("====================================")
     //        print("")
 
-            
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 
                 // [error가 존재하면 종료]
                 guard error == nil else {
@@ -497,7 +528,11 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-            let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*2
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*2
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 
                 // [error가 존재하면 종료]
                 guard error == nil else {
