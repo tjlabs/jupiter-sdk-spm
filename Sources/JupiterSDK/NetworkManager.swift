@@ -4,7 +4,7 @@ public class NetworkManager {
     
     static let shared = NetworkManager()
     let TIMEOUT_VALUE_PUT: Double = 2.0
-    let TIMEOUT_VALUE_POST: Double = 5.0
+    let TIMEOUT_VALUE_POST: Double = 2.0
     
     func putReceivedForce(url: String, input: [ReceivedForce], completion: @escaping (Int, String) -> Void){
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
@@ -19,11 +19,12 @@ public class NetworkManager {
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
             // [http 요청 수행 실시]
-    //        print("")
-    //        print("====================================")
-    //        print("PUT RF 데이터 :: ", input)
-    //        print("====================================")
-    //        print("")
+//            print("")
+//            print("====================================")
+//            print("PUT RF URL :: ", url)
+//            print("PUT RF 데이터 :: ", input)
+//            print("====================================")
+//            print("")
             
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
@@ -53,11 +54,11 @@ public class NetworkManager {
 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-    //                print("")
-    //                print("====================================")
-    //                print("RESPONSE RF 데이터 :: ", resultCode)
-    //                print("====================================")
-    //                print("")
+//                    print("")
+//                    print("====================================")
+//                    print("RESPONSE RF 데이터 :: ", resultCode)
+//                    print("====================================")
+//                    print("")
                     completion(resultCode, "(Jupiter) Success Send RFD")
                 }
             })
@@ -120,6 +121,67 @@ public class NetworkManager {
     //                print("====================================")
     //                print("")
                     completion(resultCode, String(input[input.count-1].index))
+                }
+            })
+            dataTask.resume()
+        } else {
+            completion(500, "(Jupiter) Fail to encode UVD")
+        }
+    }
+    
+    func putRssiBias(url: String, input: RssiBias, completion: @escaping (Int, String) -> Void) {
+        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
+        let urlComponents = URLComponents(string: url)
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+
+        requestURL.httpMethod = "PUT"
+        let encodingData = JSONConverter.encodeJson(param: input)
+        if (encodingData != nil) {
+            requestURL.httpBody = encodingData
+            requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
+            
+            // [http 요청 수행 실시]
+    //        print("")
+    //        print("====================================")
+    //        print("PUT BIAS 데이터 :: ", input)
+    //        print("====================================")
+    //        print("")
+            
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_PUT
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+                // [error가 존재하면 종료]
+                guard error == nil else {
+                    completion(500, error?.localizedDescription ?? "Fail")
+                    return
+                }
+
+                // [status 코드 체크 실시]
+                let successsRange = 200..<300
+                guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+                else {
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    return
+                }
+
+                // [response 데이터 획득]
+                let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+                guard let resultLen = data else {
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    return
+                }
+
+                // [콜백 반환]
+                DispatchQueue.main.async {
+    //                print("")
+    //                print("====================================")
+    //                print("RESPONSE BIAS 데이터 :: ", resultCode)
+    //                print("====================================")
+    //                print("")
+                    completion(resultCode, "(Jupiter) Success Send RSSI Bias")
                 }
             })
             dataTask.resume()
@@ -529,8 +591,8 @@ public class NetworkManager {
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
             let sessionConfig = URLSessionConfiguration.default
-            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*2
-            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*2
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*5
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*5
             let session = URLSession(configuration: sessionConfig)
             let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 

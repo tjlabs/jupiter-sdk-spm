@@ -6,6 +6,14 @@ struct UserInfo: Codable {
     var os_version: Int
 }
 
+struct SectorInfo: Codable {
+    var sector_id: Int
+}
+
+struct SectorInfoResult: Codable {
+    var building_level: [[String]]
+}
+ 
 struct CardList: Codable {
     var sectors: [CardInfo]
 }
@@ -104,6 +112,7 @@ public struct ServiceResult {
     public var scc: Double = 0
     public var phase: String = ""
     public var bias: Int = 0
+    public var isConverged: Bool = false
     public var mode: String = ""
     
     public var level: String = ""
@@ -127,6 +136,13 @@ struct UserVelocity: Encodable {
     var length: Double
     var heading: Double
     var looking: Bool
+}
+
+struct RssiBias: Encodable {
+    var os_version: Int
+    var device_model: String
+    var rssi_scale: Double
+    var rssi_bias: Int
 }
 
 // Sector Detection

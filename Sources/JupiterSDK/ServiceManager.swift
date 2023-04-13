@@ -3,6 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
+    var sdkVersion: String = "1.11.28"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -38,11 +39,14 @@ public class ServiceManager: Observation {
     var os: String = "Unknown"
     var osVersion: Int = 0
     
-    var Road = [String: [[Double]]]()
-    var RoadHeading = [String: [String]]()
+    var PathPoint = [String: [[Double]]]()
+    var PathMagScale = [String: [Double]]()
+    var PathHeading = [String: [String]]()
+    
     var AbnormalArea = [String: [[Double]]]()
     var EntranceArea = [String: [[Double]]]()
-    
+    var PathMatchingArea = [String: [[Double]]]()
+    public var isLoadEnd = [String: [Bool]]()
     
     // ----- Sensor & BLE ----- //
     var sensorData = SensorData()
@@ -110,7 +114,6 @@ public class ServiceManager: Observation {
 
     var updateTimer: DispatchSourceTimer?
     var UPDATE_INTERVAL: TimeInterval = 1/5 // second
-    var updateTimerStartTime: Int = 0
 
     var osrTimer: DispatchSourceTimer?
     var OSR_INTERVAL: TimeInterval = 2
@@ -141,7 +144,8 @@ public class ServiceManager: Observation {
     var unitDRGenerator = UnitDRGenerator()
     
     var unitDistane: Double = 0
-    var onStartFlag: Bool = false
+    var isStartFlag: Bool = false
+    var isStartComplete: Bool = false
     
     var preOutputMobileTime: Int = 0
     var preUnitHeading: Double = 0
@@ -334,7 +338,6 @@ public class ServiceManager: Observation {
             return (isSuccess, message)
         }
         
-        onStartFlag = false
         if (self.service == "FLT") {
             unitDRInfo = UnitDRInfo()
             unitDRGenerator.setMode(mode: mode)
@@ -352,7 +355,6 @@ public class ServiceManager: Observation {
             }
             setModeParam(mode: self.runMode, phase: self.phase)
         }
-        onStartFlag = true
         
         return (isSuccess, message)
     }
@@ -362,7 +364,7 @@ public class ServiceManager: Observation {
         settingURL(server: self.serverType, os: self.osType)
     }
 
-    public func startService(id: String, sector_id: Int, service: String, mode: String) -> (Bool, String) {
+    public func startService(id: String, sector_id: Int, service: String, mode: String, completion: @escaping (Bool, String) -> Void) {
         let localTime = getLocalTimeString()
         let log: String = localTime + " , (Jupiter) Success : Service Initalization"
         
@@ -375,6 +377,8 @@ public class ServiceManager: Observation {
         self.user_id = id
         self.service = service
         self.mode = mode
+        
+        var countBuildingLevel: Int = 0
         
         var interval: Double = 1/2
         var numInput = 6
@@ -404,24 +408,26 @@ public class ServiceManager: Observation {
         default:
             let log: String = localTime + " , (Jupiter) Error : Invalid Service Name"
             message = log
-            return (isSuccess, message)
+            
+            completion(false, message)
         }
         
         self.RFD_INPUT_NUM = numInput
         self.RFD_INTERVAL = interval
         
-        if (onStartFlag) {
+        if (self.isStartFlag) {
             isSuccess = false
             message = localTime + " , (Jupiter) Error : Please stop another service"
             
-            return (isSuccess, message)
+            completion(isSuccess, message)
         } else {
+            self.isStartFlag = true
             let initService = self.initService()
             if (!initService.0) {
                 isSuccess = initService.0
                 message = initService.1
                 
-                return (isSuccess, message)
+                completion(isSuccess, message)
             }
         }
         
@@ -433,17 +439,8 @@ public class ServiceManager: Observation {
             let log: String = localTime + " , (Jupiter) Error : User ID cannot be empty or contain space"
             message = log
             
-            return (isSuccess, message)
+            completion(isSuccess, message)
         } else {
-            if (!NetworkCheck.shared.isConnectedToInternet()) {
-                isSuccess = false
-                
-                let log: String = localTime + " , (Jupiter) Error : Network is not connected"
-                message = log
-                
-                return (isSuccess, message)
-            }
-            
             // Login Success
             let userInfo = UserInfo(user_id: self.user_id, device_model: deviceModel, os_version: osVersion)
             postUser(url: USER_URL, input: userInfo, completion: { [self] statusCode, returnedString in
@@ -451,24 +448,12 @@ public class ServiceManager: Observation {
                     let log: String = localTime + " , (Jupiter) Success : User Login"
                     print(log)
                     self.startTimer()
-                } else {
-                    let log: String = localTime + " , (Jupiter) Error : User Login"
-                    print(log)
-                }
-            })
-            
-            let adminInfo = UserInfo(user_id: "tjlabsAdmin", device_model: deviceModel, os_version: osVersion)
-            postUser(url: USER_URL, input: adminInfo, completion: { [self] statusCode, returnedString in
-                if (statusCode == 200) {
-                    let list = jsonToCardList(json: returnedString)
-                    let myCard = list.sectors
-
-                    for card in 0..<myCard.count {
-                        let cardInfo: CardInfo = myCard[card]
-                        let id: Int = cardInfo.sector_id
-
-                        if (id == self.sector_id) {
-                            let buildings_n_levels: [[String]] = cardInfo.building_level
+                    
+                    let sectorInfo = SectorInfo(sector_id: sector_id)
+                    postSector(url: SECTOR_URL, input: sectorInfo, completion: { [self] statusCode, returnedString in
+                        if (statusCode == 200) {
+                            let buildingLevelInfo = jsonToSectorInfoResult(json: returnedString)
+                            let buildings_n_levels: [[String]] = buildingLevelInfo.building_level
 
                             var infoBuilding = [String]()
                             var infoLevel = [String:[String]]()
@@ -491,6 +476,8 @@ public class ServiceManager: Observation {
                                     infoLevel[buildingName] = levels
                                 }
                             }
+                            
+                            let countAll = countAllValuesInDictionary(infoLevel)
 
                             // Key-Value Saved
                             for i in 0..<infoBuilding.count {
@@ -499,8 +486,16 @@ public class ServiceManager: Observation {
                                 for j in 0..<levelList!.count {
                                     let levelName = levelList![j]
                                     let key: String = "\(buildingName)_\(levelName)"
-
-                                    let url = "https://storage.googleapis.com/\(IMAGE_URL)/pp/\(self.sectorIdOrigin)/\(key).csv"
+                                    
+                                    var url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp/\(self.sectorIdOrigin)/\(key).csv"
+                                    if (self.serverType == 0) {
+                                        if (BASE_URL.contains("where-run-ios-2")) {
+                                            url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp-2/\(self.sectorIdOrigin)/\(key).csv"
+                                        }
+                                    } else {
+                                        url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp-test/\(self.sectorIdOrigin)/\(key).csv"
+                                    }
+                                    
                                     let urlComponents = URLComponents(string: url)
                                     let requestURL = URLRequest(url: (urlComponents?.url)!)
                                     let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
@@ -508,13 +503,21 @@ public class ServiceManager: Observation {
                                         if (statusCode == 200) {
                                             if let responseData = data {
                                                 if let utf8Text = String(data: responseData, encoding: .utf8) {
-                                                    ( self.Road[key], self.RoadHeading[key] ) = self.parseRoad(data: utf8Text)
+                                                    ( self.PathPoint[key], self.PathMagScale[key], self.PathHeading[key] ) = self.parseRoad(data: utf8Text)
                                                     self.isMapMatching = true
-                                                    
+                                                    self.isLoadEnd[key] = [true, true]
+//                                                    print("PathPoint \(key) = \(self.PathPoint[key])")
+//                                                    print("PathMagScale \(key) = \(self.PathMagScale[key])")
+//                                                    print("PathHeading \(key) = \(self.PathHeading[key])")
                                                     let log: String = localTime + " , (Jupiter) Success : Load \(buildingName) \(levelName) Path-Point"
                                                     print(log)
                                                 }
                                             }
+                                        } else {
+                                            self.isLoadEnd[key] = [true, false]
+                                            
+                                            let log: String = localTime + " , (Jupiter) Warnings : Load Path-Point \(buildingName) \(levelName)"
+                                            print(log)
                                         }
                                     })
                                     dataTask.resume()
@@ -529,28 +532,91 @@ public class ServiceManager: Observation {
                                             let key: String = "\(buildingGeo)_\(levelGeo)"
                                             self.AbnormalArea[key] = result.geofences
                                             self.EntranceArea[key] = result.entrance_area
+                                            
+                                            countBuildingLevel += 1
+                                            
+                                            if (countBuildingLevel == countAll) {
+                                                if (bleManager.bluetoothReady) {
+                                                    // Load Bias
+                                                    let loadedBias = self.loadRssiBias(sector_id: self.sector_id)
+                                                    print(localTime + " , (Jupiter) Bias Load : \(loadedBias)")
+                                                    self.rssiBias = loadedBias.0
+                                                    self.isBiasConverged = loadedBias.1
+                                                    displayOutput.bias = self.rssiBias
+                                                    displayOutput.isConverged = self.isBiasConverged
+                                                    
+                                                    let biasArray = self.makeRssiBiasArray(bias: loadedBias.0)
+                                                    self.rssiBiasArray = biasArray
+                                                    
+                                                    self.isActiveReturn = true
+                                                    
+                                                    self.isStartComplete = true
+
+                                                    completion(true, message)
+                                                } else {
+                                                    let log: String = localTime + " , (Jupiter) Error : Bluetooth is not enabled"
+                                                    message = log
+                                                    
+                                                    self.stopTimer()
+                                                    completion(false, message)
+                                                }
+                                            }
+                                        } else {
+                                            isSuccess = false
+                                            self.stopTimer()
+                                            if (!NetworkCheck.shared.isConnectedToInternet()) {
+                                                isSuccess = false
+                                                let log: String = localTime + " , (Jupiter) Error : Network is not connected"
+                                                message = log
+                                                completion(isSuccess, message)
+                                            } else {
+                                                let log: String = localTime + " , (Jupiter) Error : Load Abnormal Area"
+                                                message = log
+                                                
+                                                completion(isSuccess, message)
+                                            }
                                         }
                                     })
+                                    
+                                    let keyPathMatching: String = "\(buildingName)_\(levelName)"
+                                    self.PathMatchingArea[keyPathMatching] = self.loadPathMatchingArea(buildingName: buildingName, levelName: levelName)
                                 }
                             }
+                        } else {
+                            isSuccess = false
+                            self.stopTimer()
+                            if (!NetworkCheck.shared.isConnectedToInternet()) {
+                                isSuccess = false
+                                let log: String = localTime + " , (Jupiter) Error : Network is not connected"
+                                message = log
+                                completion(isSuccess, message)
+                            } else {
+                                let log: String = localTime + " , (Jupiter) Error : Load Building & Level Information"
+                                message = log
+                                
+                                completion(isSuccess, message)
+                            }
                         }
+                    })
+                } else {
+                    isSuccess = false
+                    self.stopTimer()
+                    if (!NetworkCheck.shared.isConnectedToInternet()) {
+                        isSuccess = false
+                        let log: String = localTime + " , (Jupiter) Error : Network is not connected"
+                        message = log
+                        completion(isSuccess, message)
+                    } else {
+                        let log: String = localTime + " , (Jupiter) Error : User Login"
+                        message = log
+
+                        completion(isSuccess, message)
                     }
                 }
             })
-            
-            let loadedBias = self.loadRssiBias(sector_id: self.sector_id)
-            print(localTime + " , (Jupiter) Bias Load : \(loadedBias)")
-            self.rssiBias = loadedBias.0
-            self.isBiasConverged = loadedBias.1
-            
-            let biasArray = self.makeRssiBiasArray(bias: loadedBias.0)
-            self.rssiBiasArray = biasArray
-            
-            self.isActiveReturn = true
-            
-            return (isSuccess, message)
         }
     }
+    
     
     func settingURL(server: Int, os: Int) {
         // (server) 0 : Release  //  1 : Test
@@ -569,24 +635,29 @@ public class ServiceManager: Observation {
         setBaseURL(url: BASE_URL)
     }
     
-    public func stopService() {
+    public func stopService() -> (Bool, String) {
         let localTime: String = getLocalTimeString()
+        var message: String = localTime + " , (Jupiter) Success : Stop Service"
         
-        stopTimer()
-        stopBLE()
-        
-        if (self.service == "FLT") {
-            unitDRInfo = UnitDRInfo()
-            onStartFlag = false
-            saveRssiBias(bias: self.rssiBias, isConverged: self.isBiasConverged, sector_id: self.sector_id)
+        if (self.isStartComplete) {
+            stopTimer()
+            stopBLE()
+            
+            if (self.service == "FLT") {
+                unitDRInfo = UnitDRInfo()
+                saveRssiBias(bias: self.rssiBias, isConverged: self.isBiasConverged, sector_id: self.sector_id)
+            }
+            
+            self.initVariables()
+            self.isStartComplete = false
+            displayOutput.phase = String(0)
+            self.isMapMatching = false
+            
+            return (true, message)
+        } else {
+            message = localTime + " , (Jupiter) Fail : After the service has fully started, it can be stop "
+            return (false, message)
         }
-        
-        self.initVariables()
-        displayOutput.phase = String(0)
-        self.isMapMatching = false
-        
-        let log: String = localTime + " , (Jupiter) Stop Service"
-        print(log)
     }
     
     private func initVariables() {
@@ -612,6 +683,8 @@ public class ServiceManager: Observation {
 
         self.timeUpdateOutput = FineLocationTrackingFromServer()
         self.measurementOutput = FineLocationTrackingFromServer()
+        self.isStartFlag = false
+        self.isActiveReturn = true
     }
     
     public func initCollect() {
@@ -623,14 +696,14 @@ public class ServiceManager: Observation {
     }
     
     public func startCollect() {
-        onStartFlag = true
+        isStartFlag = true
     }
     
     public func stopCollect() {
         stopCollectTimer()
         stopBLE()
         
-        onStartFlag = false
+        isStartFlag = false
     }
     
     public func getResult(completion: @escaping (Int, String) -> Void) {
@@ -958,7 +1031,6 @@ public class ServiceManager: Observation {
         updateTimer!.schedule(deadline: .now(), repeating: UPDATE_INTERVAL)
         updateTimer!.setEventHandler(handler: self.outputTimerUpdate)
         updateTimer!.activate()
-        updateTimerStartTime = getCurrentTimeInMilliseconds()
         
         let queueOSR = DispatchQueue(label: Bundle.main.bundleIdentifier! + ".osrTimer")
         osrTimer = DispatchSource.makeTimerSource(queue: queueOSR)
@@ -1106,6 +1178,7 @@ public class ServiceManager: Observation {
                 self.wakeUpFromSleepMode()
                 if (self.isActiveService) {
                     let data = ReceivedForce(user_id: self.user_id, mobile_time: currentTime, ble: bleAvg, pressure: self.pressure)
+//                    let data = ReceivedForce(user_id: self.user_id, mobile_time: currentTime, ble: ["TJ-00CB-0000024C-0000": -80.0], pressure: self.pressure)
                     
                     inputReceivedForce.append(data)
                     if ((inputReceivedForce.count-1) >= RFD_INPUT_NUM) {
@@ -1172,7 +1245,7 @@ public class ServiceManager: Observation {
         // UV Control
         setModeParam(mode: self.runMode, phase: self.phase)
         
-        if (onStartFlag && self.service == "FLT") {
+        if (isStartFlag && self.service == "FLT") {
             unitDRInfo = unitDRGenerator.generateDRInfo(sensorData: sensorData)
         }
         
@@ -1474,7 +1547,9 @@ public class ServiceManager: Observation {
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
             self.networkCount = 0
             if (statusCode == 200) {
+//                print("Return : \(returnedString)")
                 let result = jsonToResult(json: returnedString)
+//                print("Decoded : \(result)")
                 if (result.x != 0 && result.y != 0) {
                     if (self.isBiasRequested) {
                         let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
@@ -1487,16 +1562,20 @@ public class ServiceManager: Observation {
                             if (resultEstRssiBias.0) {
                                 self.sccGoodBiasArray.append(result.rss_compensation)
                                 if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
-                                    let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
+                                    let biasAvg = averageBiasArray(biasArray: self.sccGoodBiasArray)
                                     self.sccGoodBiasArray.remove(at: 0)
-                                    self.rssiBias = biasAvg
-                                    self.isBiasConverged = true
+                                    self.rssiBias = biasAvg.0
+                                    self.isBiasConverged = biasAvg.1
+                                    if (!biasAvg.1) {
+                                        self.sccGoodBiasArray = [Int]()
+                                    }
                                     self.saveRssiBias(bias: self.rssiBias, isConverged: self.isBiasConverged, sector_id: self.sector_id)
                                 }
                             }
                             
                             self.isBiasRequested = false
                             displayOutput.bias = self.rssiBias
+                            displayOutput.isConverged = self.isBiasConverged
                         } else if (biasCheckTime > 3000) {
                             self.isBiasRequested = false
                         }
@@ -1514,7 +1593,7 @@ public class ServiceManager: Observation {
                         
                         // Check Bias Re-estimation is needed
                         if (self.isBiasConverged) {
-                            if (result.scc < 0.4) {
+                            if (result.scc < 0.5) {
                                 self.sccBadCount += 1
                                 if (self.sccBadCount > 1) {
                                     reEstimateRssiBias()
@@ -1715,15 +1794,19 @@ public class ServiceManager: Observation {
                         if (resultEstRssiBias.0) {
                             self.sccGoodBiasArray.append(result.rss_compensation)
                             if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
-                                let biasAvg: Int = averageBiasArray(biasArray: self.sccGoodBiasArray)
+                                let biasAvg = averageBiasArray(biasArray: self.sccGoodBiasArray)
                                 self.sccGoodBiasArray.remove(at: 0)
-                                self.rssiBias = biasAvg
-                                self.isBiasConverged = true
+                                self.rssiBias = biasAvg.0
+                                self.isBiasConverged = biasAvg.1
+                                if (!biasAvg.1) {
+                                    self.sccGoodBiasArray = [Int]()
+                                }
                                 self.saveRssiBias(bias: self.rssiBias, isConverged: self.isBiasConverged, sector_id: self.sector_id)
                             }
                         }
                         self.isBiasRequested = false
                         displayOutput.bias = self.rssiBias
+                        displayOutput.isConverged = self.isBiasConverged
                     } else if (biasCheckTime > 3000) {
                         self.isBiasRequested = false
                     }
@@ -1956,11 +2039,6 @@ public class ServiceManager: Observation {
                     }
                 }
             })
-            
-            // Check Abnormal Area
-            let lastResult = self.lastResult
-            let scaleFactor = self.checkInAbnormalArea(result: lastResult)
-            unitDRGenerator.setVelocityScaleFactor(scaleFactor: scaleFactor)
             
             // Check Entrance Level
             let isEntrance = self.checkIsEntranceLevel(result: lastResult)
@@ -2203,6 +2281,36 @@ public class ServiceManager: Observation {
         }
     }
     
+    func checkInPathMatchingArea(x: Double, y: Double, building: String, level: String) -> (Bool, [Double]) {
+        var area = [Double]()
+        
+        let buildingName = building
+        let levelName = removeLevelDirectionString(levelName: level)
+        
+        let key = "\(buildingName)_\(levelName)"
+        guard let pathMatchingArea: [[Double]] = PathMatchingArea[key] else {
+            return (false, area)
+        }
+        
+        for i in 0..<pathMatchingArea.count {
+            if (!pathMatchingArea[i].isEmpty) {
+                let xMin = pathMatchingArea[i][0]
+                let yMin = pathMatchingArea[i][1]
+                let xMax = pathMatchingArea[i][2]
+                let yMax = pathMatchingArea[i][3]
+                
+                if (x >= xMin && x <= xMax) {
+                    if (y >= yMin && y <= yMax) {
+                        area = pathMatchingArea[i]
+                        return (true, area)
+                    }
+                }
+            }
+        }
+        
+        return (false, area)
+    }
+    
     func saveRssiBias(bias: Int, isConverged: Bool, sector_id: Int) {
         let currentTime = getCurrentTimeInMilliseconds()
         
@@ -2229,6 +2337,10 @@ public class ServiceManager: Observation {
         } catch {
             print("(Jupiter) Error : Fail to save RssiBias")
         }
+    }
+    
+    func putRssiBias() {
+        
     }
     
     func loadRssiBias(sector_id: Int) -> (Int, Bool) {
@@ -2350,8 +2462,10 @@ public class ServiceManager: Observation {
         return newBiasArray
     }
     
-    func averageBiasArray(biasArray: [Int]) -> Int {
-        var result: Int = 0
+    func averageBiasArray(biasArray: [Int]) -> (Int, Bool) {
+        var bias: Int = 0
+        var isConverge: Bool = false
+        
         let array: [Double] = convertToDoubleArray(intArray: biasArray)
         
         let mean = array.reduce(0, +) / Double(array.count)
@@ -2362,14 +2476,16 @@ public class ServiceManager: Observation {
         if (validValues.count < 17) {
             let avgDouble: Double = biasArray.average
             
-            result = Int(round(avgDouble))
-            return result
+            bias = Int(round(avgDouble))
+            isConverge = false
+            return (bias, isConverge)
         } else {
             let sum = validValues.reduce(0, +)
             let avgDouble: Double = Double(sum) / Double(validValues.count)
             
-            result = Int(round(avgDouble))
-            return result
+            bias = Int(round(avgDouble))
+            isConverge = true
+            return (bias, isConverge)
         }
     }
     
@@ -2395,7 +2511,7 @@ public class ServiceManager: Observation {
             print(log)
         }
         
-        if (onStartFlag) {
+        if (isStartFlag) {
             unitDRInfo = unitDRGenerator.generateDRInfo(sensorData: sensorData)
         }
         
@@ -2471,8 +2587,9 @@ public class ServiceManager: Observation {
         return result
     }
     
-    private func parseRoad(data: String) -> ( [[Double]], [String] ) {
+    private func parseRoad(data: String) -> ( [[Double]], [Double], [String] ) {
         var road = [[Double]]()
+        var roadScale = [Double]()
         var roadHeading = [String]()
         
         var roadX = [Double]()
@@ -2485,10 +2602,11 @@ public class ServiceManager: Observation {
                 
                 roadX.append(Double(lineData[0])!)
                 roadY.append(Double(lineData[1])!)
+                roadScale.append(Double(lineData[2])!)
                 
                 var headingArray: String = ""
-                if (lineData.count > 2) {
-                    for j in 2..<lineData.count {
+                if (lineData.count > 3) {
+                    for j in 3..<lineData.count {
                         headingArray.append(lineData[j])
                         if (lineData[j] != "") {
                             headingArray.append(",")
@@ -2500,7 +2618,7 @@ public class ServiceManager: Observation {
         }
         road = [roadX, roadY]
         
-        return (road, roadHeading)
+        return (road, roadScale, roadHeading)
     }
     
     private func loadEntranceArea(buildingName: String, levelName: String) -> [[Double]] {
@@ -2521,6 +2639,20 @@ public class ServiceManager: Observation {
         }
         
         return entranceArea
+    }
+    
+    private func loadPathMatchingArea(buildingName: String, levelName: String) -> [[Double]] {
+        var pathMatchingArea = [[Double]]()
+        let key: String = "\(buildingName)_\(levelName)"
+        if (key == "COEX_B2") {
+            pathMatchingArea.append([265, 0, 298, 29])
+            pathMatchingArea.append([238, 154, 258, 198])
+            pathMatchingArea.append([284, 270, 296, 305])
+            pathMatchingArea.append([227, 390, 262, 448])
+            pathMatchingArea.append([14, 365, 67, 396])
+        }
+        
+        return pathMatchingArea
     }
     
     private func updateAllResult(result: [Double]) {
@@ -2553,25 +2685,38 @@ public class ServiceManager: Observation {
         }
         
         if (!(building.isEmpty) && !(level.isEmpty)) {
-            guard let mainRoad: [[Double]] = Road[key] else {
-                return (isSuccess, xyh)
-            }
-            guard let mainHeading: [String] = RoadHeading[key] else {
+            guard let mainRoad: [[Double]] = PathPoint[key] else {
                 return (isSuccess, xyh)
             }
             
+            guard let mainMagScale: [Double] = PathMagScale[key] else {
+                return (isSuccess, xyh)
+            }
+            
+            guard let mainHeading: [String] = PathHeading[key] else {
+                return (isSuccess, xyh)
+            }
+            
+            let pathhMatchingArea = checkInPathMatchingArea(x: x, y: y, building: building, level: level)
+            
             // Heading 사용
-            var idhArray = [[Double]]()
+            var idshArray = [[Double]]()
             var pathArray = [[Double]]()
             var failArray = [[Double]]()
             if (!mainRoad.isEmpty) {
                 let roadX = mainRoad[0]
                 let roadY = mainRoad[1]
                 
-                let xMin = x - SQUARE_RANGE
-                let xMax = x + SQUARE_RANGE
-                let yMin = y - SQUARE_RANGE
-                let yMax = y + SQUARE_RANGE
+                var xMin = x - SQUARE_RANGE
+                var xMax = x + SQUARE_RANGE
+                var yMin = y - SQUARE_RANGE
+                var yMax = y + SQUARE_RANGE
+                if (pathhMatchingArea.0) {
+                    xMin = pathhMatchingArea.1[0]
+                    yMin = pathhMatchingArea.1[1]
+                    xMax = pathhMatchingArea.1[2]
+                    yMax = pathhMatchingArea.1[3]
+                }
                 
                 for i in 0..<roadX.count {
                     let xPath = roadX[i]
@@ -2582,7 +2727,9 @@ public class ServiceManager: Observation {
                         if (yPath >= yMin && yPath <= yMax) {
                             let index = Double(i)
                             let distance = sqrt(pow(x-xPath, 2) + pow(y-yPath, 2))
-                            var idh: [Double] = [index, distance, heading]
+                            
+                            let magScale = mainMagScale[i]
+                            var idsh: [Double] = [index, distance, magScale, heading]
                             var path: [Double] = [xPath, yPath, 0, 0]
                             
                             let headingArray = mainHeading[i]
@@ -2606,7 +2753,7 @@ public class ServiceManager: Observation {
                                 if (!diffHeading.isEmpty) {
                                     let idxHeading = diffHeading.firstIndex(of: diffHeading.min()!)
                                     let minHeading = Double(headingData[idxHeading!])!
-                                    idh[2] = minHeading
+                                    idsh[3] = minHeading
                                     if (mode == "pdr") {
                                         
                                     } else {
@@ -2629,31 +2776,36 @@ public class ServiceManager: Observation {
                                 }
                             }
                             if (isValidIdh) {
-                                idhArray.append(idh)
+                                idshArray.append(idsh)
                                 pathArray.append(path)
                             } else {
-                                failArray.append(idh)
+                                failArray.append(idsh)
                             }
                         }
                     }
                 }
                 
-                if (!idhArray.isEmpty) {
-                    let sortedIdh = idhArray.sorted(by: {$0[1] < $1[1] })
+                if (!idshArray.isEmpty) {
+                    let sortedIdsh = idshArray.sorted(by: {$0[1] < $1[1] })
                     var index: Int = 0
                     var correctedHeading: Double = heading
+                    var correctedScale = 1.0
                     
-                    if (!sortedIdh.isEmpty) {
-                        let minData: [Double] = sortedIdh[0]
+                    if (!sortedIdsh.isEmpty) {
+                        let minData: [Double] = sortedIdsh[0]
                         index = Int(minData[0])
                         if (mode == "pdr") {
                             correctedHeading = heading
                         } else {
-                            correctedHeading = minData[2]
+                            correctedScale = minData[2]
+                            correctedHeading = minData[3]
                         }
                     }
                     
                     isSuccess = true
+                    
+                    unitDRGenerator.setVelocityScaleFactor(scaleFactor: correctedScale)
+//                    print(getLocalTimeString() + " , (Jupiter) Set Mag Scale : x = \(roadX[index]) , y = \(roadY[index]) , scale = \(correctedScale)")
                     xyh = [roadX[index], roadY[index], correctedHeading]
                 }
             }
@@ -2723,6 +2875,50 @@ public class ServiceManager: Observation {
         dataTask.resume()
     }
     
+    func postSector(url: String, input: SectorInfo, completion: @escaping (Int, String) -> Void) {
+        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
+        let urlComponents = URLComponents(string: url)
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+        
+        requestURL.httpMethod = "POST"
+        let encodingData = JSONConverter.encodeJson(param: input)
+        requestURL.httpBody = encodingData
+        requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
+        
+        let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            
+            // [error가 존재하면 종료]
+            guard error == nil else {
+                // [콜백 반환]
+                completion(500, error?.localizedDescription ?? "Fail")
+                return
+            }
+            
+            // [status 코드 체크 실시]
+            let successsRange = 200..<300
+            guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+            else {
+                // [콜백 반환]
+                completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                return
+            }
+            
+            // [response 데이터 획득]
+            let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+            let resultLen = data! // [데이터 길이]
+            let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
+            
+            // [콜백 반환]
+            DispatchQueue.main.async {
+                completion(resultCode, resultData)
+            }
+        })
+        
+        // [network 통신 실행]
+        dataTask.resume()
+    }
+    
     func jsonToCardList(json: String) -> CardList {
         let result = CardList(sectors: [])
         let decoder = JSONDecoder()
@@ -2730,6 +2926,19 @@ public class ServiceManager: Observation {
         let jsonString = json
         
         if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(CardList.self, from: data) {
+            return decoded
+        }
+        
+        return result
+    }
+    
+    func jsonToSectorInfoResult(json: String) -> SectorInfoResult {
+        let result = SectorInfoResult(building_level: [[]])
+        let decoder = JSONDecoder()
+        
+        let jsonString = json
+        
+        if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(SectorInfoResult.self, from: data) {
             return decoded
         }
         
@@ -2765,6 +2974,14 @@ public class ServiceManager: Observation {
                 self.INDEX_THRESHOLD = UVD_INPUT_NUM+1
             }
         }
+    }
+    
+    func countAllValuesInDictionary(_ dictionary: [String: [String]]) -> Int {
+        var count = 0
+        for (_, value) in dictionary {
+            count += value.count
+        }
+        return count
     }
     
     // Kalman Filter
