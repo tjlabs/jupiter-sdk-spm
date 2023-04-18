@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    var sdkVersion: String = "1.11.28"
+    var sdkVersion: String = "1.11.29"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -64,7 +64,6 @@ public class ServiceManager: Observation {
     var magY: Double = 0
     var magZ: Double = 0
     var pressure: Double = 0
-    
     var RFD_INPUT_NUM: Int = 7
     // --------------------- //
 
@@ -224,7 +223,9 @@ public class ServiceManager: Observation {
     var pastHeadingKalmanQ: Double = 0.5
     var pastHeadingKalmanR: Double = 1
     var pastHeadingKalmanK: Double = 1
-
+    // ------------------------------------- //
+    
+    
     var timeUpdatePosition = KalmanOutput()
     var measurementPosition = KalmanOutput()
 
@@ -426,7 +427,7 @@ public class ServiceManager: Observation {
             if (!initService.0) {
                 isSuccess = initService.0
                 message = initService.1
-                
+                self.isStartFlag = false
                 completion(isSuccess, message)
             }
         }
@@ -438,7 +439,7 @@ public class ServiceManager: Observation {
             
             let log: String = localTime + " , (Jupiter) Error : User ID cannot be empty or contain space"
             message = log
-            
+            self.isStartFlag = false
             completion(isSuccess, message)
         } else {
             // Login Success
@@ -447,7 +448,6 @@ public class ServiceManager: Observation {
                 if (statusCode == 200) {
                     let log: String = localTime + " , (Jupiter) Success : User Login"
                     print(log)
-                    self.startTimer()
                     
                     let sectorInfo = SectorInfo(sector_id: sector_id)
                     postSector(url: SECTOR_URL, input: sectorInfo, completion: { [self] statusCode, returnedString in
@@ -549,15 +549,15 @@ public class ServiceManager: Observation {
                                                     self.rssiBiasArray = biasArray
                                                     
                                                     self.isActiveReturn = true
-                                                    
                                                     self.isStartComplete = true
-
+                                                    
+                                                    self.startTimer()
                                                     completion(true, message)
                                                 } else {
                                                     let log: String = localTime + " , (Jupiter) Error : Bluetooth is not enabled"
                                                     message = log
-                                                    
                                                     self.stopTimer()
+                                                    self.isStartFlag = false
                                                     completion(false, message)
                                                 }
                                             }
@@ -568,11 +568,12 @@ public class ServiceManager: Observation {
                                                 isSuccess = false
                                                 let log: String = localTime + " , (Jupiter) Error : Network is not connected"
                                                 message = log
+                                                self.isStartFlag = false
                                                 completion(isSuccess, message)
                                             } else {
                                                 let log: String = localTime + " , (Jupiter) Error : Load Abnormal Area"
                                                 message = log
-                                                
+                                                self.isStartFlag = false
                                                 completion(isSuccess, message)
                                             }
                                         }
@@ -589,27 +590,32 @@ public class ServiceManager: Observation {
                                 isSuccess = false
                                 let log: String = localTime + " , (Jupiter) Error : Network is not connected"
                                 message = log
+                                self.isStartFlag = false
                                 completion(isSuccess, message)
                             } else {
                                 let log: String = localTime + " , (Jupiter) Error : Load Building & Level Information"
                                 message = log
-                                
+                                self.isStartFlag = false
                                 completion(isSuccess, message)
                             }
                         }
                     })
                 } else {
                     isSuccess = false
+                    
                     self.stopTimer()
                     if (!NetworkCheck.shared.isConnectedToInternet()) {
                         isSuccess = false
                         let log: String = localTime + " , (Jupiter) Error : Network is not connected"
                         message = log
+                        
+                        self.isStartFlag = false
                         completion(isSuccess, message)
                     } else {
                         let log: String = localTime + " , (Jupiter) Error : User Login"
                         message = log
-
+                        
+                        self.isStartFlag = false
                         completion(isSuccess, message)
                     }
                 }
@@ -1161,7 +1167,7 @@ public class ServiceManager: Observation {
         let currentTime = getCurrentTimeInMilliseconds() - (Int(validTime)/2)
         let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
         if let bleData = bleDictionary {
-            let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+            let bleTrimed = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
             let bleAvg = avgBleData(bleDictionary: bleTrimed)
             
             if (!bleAvg.isEmpty) {
@@ -1547,9 +1553,7 @@ public class ServiceManager: Observation {
         NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString in
             self.networkCount = 0
             if (statusCode == 200) {
-//                print("Return : \(returnedString)")
                 let result = jsonToResult(json: returnedString)
-//                print("Decoded : \(result)")
                 if (result.x != 0 && result.y != 0) {
                     if (self.isBiasRequested) {
                         let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
@@ -2011,7 +2015,7 @@ public class ServiceManager: Observation {
                 let validTime = self.BLE_VALID_TIME
                 let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
                 if let bleData = bleDictionary {
-                    let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+                    let bleTrimed = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
                     let bleAvg = avgBleData(bleDictionary: bleTrimed)
                     
                     let isStrong = checkSufficientRfd(bleDict: bleAvg, CONDITION: -87, COUNT: 2)
@@ -2202,7 +2206,6 @@ public class ServiceManager: Observation {
         if (diffLevel > 0) {
             levelDirection = "_D"
         }
-        
         return levelDirection
     }
     
@@ -2381,7 +2384,6 @@ public class ServiceManager: Observation {
             if (biasArray[2] > BIAS_RANGE_MAX) {
                 biasArray[2] = BIAS_RANGE_MAX
             }
-            
         } else if (biasArray[2] >= BIAS_RANGE_MAX) {
             biasArray[2] = BIAS_RANGE_MAX
             biasArray[0] = BIAS_RANGE_MAX - biasRange
@@ -2499,7 +2501,7 @@ public class ServiceManager: Observation {
         let currentTime = getCurrentTimeInMilliseconds()
         let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
         if let bleData = bleDictionary {
-            let bleTrimed = trimBleData(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+            let bleTrimed = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
             let bleAvg = avgBleData(bleDictionary: bleTrimed)
             let bleRaw = latestBleData(bleDictionary: bleTrimed)
             
@@ -2805,7 +2807,6 @@ public class ServiceManager: Observation {
                     isSuccess = true
                     
                     unitDRGenerator.setVelocityScaleFactor(scaleFactor: correctedScale)
-//                    print(getLocalTimeString() + " , (Jupiter) Set Mag Scale : x = \(roadX[index]) , y = \(roadY[index]) , scale = \(correctedScale)")
                     xyh = [roadX[index], roadY[index], correctedHeading]
                 }
             }
@@ -3196,11 +3197,13 @@ public class ServiceManager: Observation {
     }
     
     // BLUETOOTH //
-    func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
+    func trimBleData(bleInput: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
         var trimmedData = [String: [[Double]]]()
+        trimmedData.reserveCapacity(bleInput.count)
         
-        for (bleID, bleData) in bleData {
+        for (bleID, bleData) in bleInput {
             var newValue = [[Double]]()
+            newValue.reserveCapacity(bleInput.count)
             for data in bleData {
                 let rssi = data[0]
                 let time = data[1]

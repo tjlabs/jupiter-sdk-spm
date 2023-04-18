@@ -3,8 +3,8 @@ import Foundation
 public class NetworkManager {
     
     static let shared = NetworkManager()
-    let TIMEOUT_VALUE_PUT: Double = 2.0
-    let TIMEOUT_VALUE_POST: Double = 2.0
+    let TIMEOUT_VALUE_PUT: Double = 5.0
+    let TIMEOUT_VALUE_POST: Double = 5.0
     
     func putReceivedForce(url: String, input: [ReceivedForce], completion: @escaping (Int, String) -> Void){
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
