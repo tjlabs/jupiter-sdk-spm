@@ -558,13 +558,13 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-                    completion(resultCode, resultData)
     //                print("")
     //                print("====================================")
     //                print("RESPONSE OSR 데이터 :: ", resultCode)
     //                print("                 :: ", resultData)
     //                print("====================================")
     //                print("")
+                    completion(resultCode, resultData)
                 }
             })
             
@@ -575,7 +575,7 @@ public class NetworkManager {
         }
     }
     
-    func postGEO(url: String, input: Geo, completion: @escaping (Int, String, String, String) -> Void) {
+    func postGEO(url: String, input: JupiterGeo, completion: @escaping (Int, String, String, String) -> Void) {
         let buildingName: String = input.building_name
         let levelName: String = input.level_name
         
@@ -589,6 +589,12 @@ public class NetworkManager {
             requestURL.httpBody = encodingData
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
+            
+//            print("")
+//            print("====================================")
+//            print("POST Geo 데이터 :: ", input)
+//            print("====================================")
+//            print("")
             
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*5
@@ -626,6 +632,12 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
+//                    print("")
+//                    print("====================================")
+//                    print("RESPONSE Geo 데이터 :: ", resultCode)
+//                    print("                 :: ", resultData)
+//                    print("====================================")
+//                    print("")
                     completion(resultCode, resultData, buildingName, levelName)
                 }
             })
@@ -634,6 +646,198 @@ public class NetworkManager {
             dataTask.resume()
         } else {
             completion(500, "Fail to encode", "", "")
+        }
+    }
+    
+    func getJupiterBias(url: String, input: JupiterBiasGet, completion: @escaping (Int, String) -> Void) {
+        var urlComponents = URLComponents(string: url)
+        urlComponents?.queryItems = [URLQueryItem(name: "device_model", value: input.device_model),
+                                     URLQueryItem(name: "os_version", value: String(input.os_version)),
+                                     URLQueryItem(name: "sector_id", value: String(input.sector_id))]
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+        
+        requestURL.httpMethod = "GET"
+        
+//        print("")
+//        print("====================================")
+//        print("GET Bias URL :: ", url)
+//        print("GET Bias 데이터 :: ", input)
+//        print("====================================")
+//        print("")
+        
+        let sessionConfig = URLSessionConfiguration.default
+        sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*5
+        sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*5
+        let session = URLSession(configuration: sessionConfig)
+        let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            
+            // [error가 존재하면 종료]
+            guard error == nil else {
+                // [콜백 반환]
+                DispatchQueue.main.async {
+                    completion(500, error?.localizedDescription ?? "Fail")
+                }
+                return
+            }
+            
+            // [status 코드 체크 실시]
+            let successsRange = 200..<300
+            guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+            else {
+                // [콜백 반환]
+                DispatchQueue.main.async {
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                }
+                return
+            }
+            
+            // [response 데이터 획득]
+            let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+            guard let resultLen = data else {
+                completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                return
+            }
+            let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
+            
+            // [콜백 반환]
+            DispatchQueue.main.async {
+//                print("")
+//                print("====================================")
+//                print("RESPONSE Bias 데이터 :: ", resultCode)
+//                print("                 :: ", resultData)
+//                print("====================================")
+//                print("")
+                completion(resultCode, resultData)
+            }
+        })
+        
+        // [network 통신 실행]
+        dataTask.resume()
+    }
+    
+    func getJupiterDeviceBias(url: String, input: JupiterDeviceBiasGet, completion: @escaping (Int, String) -> Void) {
+        var urlComponents = URLComponents(string: url)
+        urlComponents?.queryItems = [URLQueryItem(name: "device_model", value: input.device_model),
+                                     URLQueryItem(name: "sector_id", value: String(input.sector_id))]
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+        
+        requestURL.httpMethod = "GET"
+        
+//        print("")
+//        print("====================================")
+//        print("GET Bias URL (Device) :: ", url)
+//        print("GET Bias 데이터  (Device) :: ", input)
+//        print("====================================")
+//        print("")
+        
+        let sessionConfig = URLSessionConfiguration.default
+        sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*5
+        sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*5
+        let session = URLSession(configuration: sessionConfig)
+        let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            
+            // [error가 존재하면 종료]
+            guard error == nil else {
+                // [콜백 반환]
+                DispatchQueue.main.async {
+                    completion(500, error?.localizedDescription ?? "Fail")
+                }
+                return
+            }
+            
+            // [status 코드 체크 실시]
+            let successsRange = 200..<300
+            guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+            else {
+                // [콜백 반환]
+                DispatchQueue.main.async {
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                }
+                return
+            }
+            
+            // [response 데이터 획득]
+            let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+            guard let resultLen = data else {
+                completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                return
+            }
+            let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
+            
+            // [콜백 반환]
+            DispatchQueue.main.async {
+//                print("")
+//                print("====================================")
+//                print("RESPONSE Bias 데이터 (Device) :: ", resultCode)
+//                print("                 :: ", resultData)
+//                print("====================================")
+//                print("")
+                completion(resultCode, resultData)
+            }
+        })
+        
+        // [network 통신 실행]
+        dataTask.resume()
+    }
+    
+    func postJupiterBias(url: String, input: JupiterBiasPost, completion: @escaping (Int, String) -> Void){
+        let urlComponents = URLComponents(string: url)
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+
+        requestURL.httpMethod = "POST"
+        let encodingData = JSONConverter.encodeJson(param: input)
+        if (encodingData != nil) {
+            requestURL.httpBody = encodingData
+            requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
+            
+            // [http 요청 수행 실시]
+//            print("")
+//            print("====================================")
+//            print("POST Bias URL :: ", url)
+//            print("POST Bias 데이터 :: ", input)
+//            print("====================================")
+//            print("")
+            
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_PUT
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+                // [error가 존재하면 종료]
+                guard error == nil else {
+                    completion(500, error?.localizedDescription ?? "Fail")
+                    return
+                }
+
+                // [status 코드 체크 실시]
+                let successsRange = 200..<300
+                guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+                else {
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    return
+                }
+
+                // [response 데이터 획득]
+                let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+                guard let resultLen = data else {
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    return
+                }
+
+                // [콜백 반환]
+                DispatchQueue.main.async {
+//                    print("")
+//                    print("====================================")
+//                    print("RESPONSE Bias 데이터 :: ", resultCode)
+//                    print("====================================")
+//                    print("")
+                    completion(resultCode, "(Jupiter) Success Send Bias")
+                }
+            })
+            dataTask.resume()
+        } else {
+            completion(500, "(Jupiter) Fail to encode JupiterBiasPut")
         }
     }
 }

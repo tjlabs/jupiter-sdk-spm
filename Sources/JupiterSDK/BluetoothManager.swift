@@ -70,6 +70,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     
     var bleDictionary = [String: [[Double]]]()
     var bleDiscoveredTime: Double = 0
+    var rssiScale: Double = 1.0
     
     public var BLE_VALID_TIME: Double = 1000
     
@@ -165,15 +166,17 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     }
                     
                     var bleScaned = self.bleDictionary
+                    let rssiValue = RSSI.doubleValue*self.rssiScale
                     if (bleScaned.contains(where: condition)) {
                         let data = bleScaned.filter(condition)
                         var value:[[Double]] = data[bleName]!
-                        let dataToAdd: [Double] = [RSSI.doubleValue, bleTime]
+                        
+                        let dataToAdd: [Double] = [rssiValue, bleTime]
                         value.append(dataToAdd)
                         
                         bleScaned.updateValue(value, forKey: bleName)
                     } else {
-                        bleScaned.updateValue([[RSSI.doubleValue, bleTime]], forKey: bleName)
+                        bleScaned.updateValue([[rssiValue, bleTime]], forKey: bleName)
                     }
                     let bleTrimed = trimBleData(bleData: bleScaned, nowTime: bleTime, validTime: validTime)
                     self.bleDictionary = bleTrimed
@@ -255,6 +258,10 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         } else {
             self.BLE_VALID_TIME = 1500
         }
+    }
+    
+    func setRssiScale(scale: Double) {
+        self.rssiScale = scale
     }
     
     func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {

@@ -386,13 +386,14 @@ public struct Spot: Codable {
     }
 }
 
-public struct Geo: Encodable {
+// Geo
+public struct JupiterGeo: Encodable {
     var sector_id: Int
     var building_name: String
     var level_name: String
 }
 
-public struct GeoResult: Codable {
+public struct JupiterGeoResult: Codable {
     var geofences: [[Double]]
     var entrance_area: [[Double]]
     
@@ -402,11 +403,46 @@ public struct GeoResult: Codable {
     }
 }
 
-public struct ResultIsUvdChanged: Codable {
-    var mobile_time: Int
-    var building_name: String
-    var level_name: String
+// Bias
+public struct JupiterBiasGet: Encodable {
+    var device_model: String
+    var os_version: Int
+    var sector_id: Int
 }
+
+public struct JupiterDeviceBiasGet: Encodable {
+    var device_model: String
+    var sector_id: Int
+}
+
+
+public struct JupiterBiasResult: Codable {
+    public var rss_compensations: [rss_compensation]
+    
+    public init() {
+        self.rss_compensations = []
+    }
+}
+
+public struct rss_compensation: Codable {
+    public var os_version: Int
+    public var rss_compensation: Int
+    public var scale_factor: Double
+    
+    public init() {
+        self.os_version = 0
+        self.rss_compensation = 0
+        self.scale_factor = 1.0
+    }
+}
+
+public struct JupiterBiasPost: Encodable {
+    var device_model: String
+    var os_version: Int
+    var sector_id: Int
+    var rss_compensation: Int
+}
+
 
 // Recent
 struct RecentResult: Encodable {
@@ -438,17 +474,30 @@ public func decodeOSR(json: String) -> OnSpotRecognitionResult {
     return result
 }
 
-public func decodeGEO(json: String) -> GeoResult {
-    let result = GeoResult.init()
+public func decodeGEO(json: String) -> JupiterGeoResult {
+    let result = JupiterGeoResult.init()
     let decoder = JSONDecoder()
     let jsonString = json
 
-    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(GeoResult.self, from: data) {
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterGeoResult.self, from: data) {
         return decoded
     }
 
     return result
 }
+
+public func decodeRC(json: String) -> JupiterBiasResult {
+    let result = JupiterBiasResult.init()
+    let decoder = JSONDecoder()
+    let jsonString = json
+
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterBiasResult.self, from: data) {
+        return decoded
+    }
+
+    return result
+}
+
 
 public func CLDtoSD(json: String) -> String {
     let decoder = JSONDecoder()
