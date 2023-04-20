@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    var sdkVersion: String = "1.11.30"
+    var sdkVersion: String = "1.11.31"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
