@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    var sdkVersion: String = "1.11.31"
+    var sdkVersion: String = "1.11.32"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -774,6 +774,7 @@ public class ServiceManager: Observation {
             }
             
             self.initVariables()
+            self.isStartFlag = false
             self.isStartComplete = false
             displayOutput.phase = String(0)
             self.isMapMatching = false
@@ -808,7 +809,6 @@ public class ServiceManager: Observation {
 
         self.timeUpdateOutput = FineLocationTrackingFromServer()
         self.measurementOutput = FineLocationTrackingFromServer()
-        self.isStartFlag = false
         self.isActiveReturn = true
     }
     
@@ -1408,7 +1408,7 @@ public class ServiceManager: Observation {
         // UV Control
         setModeParam(mode: self.runMode, phase: self.phase)
         
-        if (isStartFlag && self.service == "FLT") {
+        if (self.service == "FLT") {
             unitDRInfo = unitDRGenerator.generateDRInfo(sensorData: sensorData)
         }
         
@@ -1486,14 +1486,13 @@ public class ServiceManager: Observation {
                         }
                         
                         self.currentTuResult = tuResult
-                        if (bleManager.bluetoothReady) {
-                            let trackingTime = getCurrentTimeInMilliseconds()
-                            tuResult.mobile_time = trackingTime
-                            self.outputResult = tuResult
-                            self.flagPast = false
-                            
-                            self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
-                        }
+                        
+                        let trackingTime = getCurrentTimeInMilliseconds()
+                        tuResult.mobile_time = trackingTime
+                        self.outputResult = tuResult
+                        self.flagPast = false
+                        
+                        self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                     }
                 }
                 preUnitHeading = unitDRInfo.heading
