@@ -89,6 +89,10 @@ public func subtractConstant(from array: [Double], constant: Double) -> [Double]
     }
 }
 
+public func convertIntArrayToDoubleArray(_ array: [Int]) -> [Double] {
+    let doubleArray = array.map { Double($0) }
+    return doubleArray
+}
 
 extension Array where Element: BinaryInteger {
 

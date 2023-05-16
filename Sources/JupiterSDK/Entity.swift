@@ -362,6 +362,8 @@ public struct OnSpotRecognitionResult: Codable {
     public var linked_level_name: String
     public var spot_id: Int
     public var spot_distance: Double
+    public var spot_range: [Int]
+    public var spot_direction_list: [Int]
 
     public init() {
         self.mobile_time = 0
@@ -370,6 +372,8 @@ public struct OnSpotRecognitionResult: Codable {
         self.linked_level_name = ""
         self.spot_id = 0
         self.spot_distance = 0
+        self.spot_range = []
+        self.spot_direction_list = []
     }
 }
 
