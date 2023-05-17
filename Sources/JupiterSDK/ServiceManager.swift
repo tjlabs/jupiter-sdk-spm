@@ -2,7 +2,7 @@ import Foundation
 import CoreMotion
 
 public class ServiceManager: Observation {
-    var sdkVersion: String = "1.12.0"
+    var sdkVersion: String = "1.12.1"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -409,7 +409,7 @@ public class ServiceManager: Observation {
             setModeParam(mode: self.runMode, phase: self.phase)
         }
         
-        notificationCenterAddOberver()
+//        notificationCenterAddOberver()
         return (isSuccess, message)
     }
     
@@ -688,7 +688,7 @@ public class ServiceManager: Observation {
                                                                                 message = log
                                                                                 self.stopTimer()
                                                                                 self.isStartFlag = false
-                                                                                NotificationCenter.default.removeObserver(self)
+//                                                                                NotificationCenter.default.removeObserver(self)
                                                                                 completion(false, message)
                                                                             }
                                                                         })
@@ -727,7 +727,7 @@ public class ServiceManager: Observation {
                                                                     message = log
                                                                     self.stopTimer()
                                                                     self.isStartFlag = false
-                                                                    NotificationCenter.default.removeObserver(self)
+//                                                                    NotificationCenter.default.removeObserver(self)
                                                                     completion(false, message)
                                                                 }
                                                             })
@@ -736,7 +736,7 @@ public class ServiceManager: Observation {
                                                             message = log
                                                             self.stopTimer()
                                                             self.isStartFlag = false
-                                                            NotificationCenter.default.removeObserver(self)
+//                                                            NotificationCenter.default.removeObserver(self)
                                                             completion(false, message)
                                                         }
                                                     })
@@ -745,7 +745,7 @@ public class ServiceManager: Observation {
                                                     message = log
                                                     self.stopTimer()
                                                     self.isStartFlag = false
-                                                    NotificationCenter.default.removeObserver(self)
+//                                                    NotificationCenter.default.removeObserver(self)
                                                     completion(false, message)
                                                 }
                                             }
@@ -755,13 +755,13 @@ public class ServiceManager: Observation {
                                                 let log: String = getLocalTimeString() + " , (Jupiter) Error : Network is not connected"
                                                 message = log
                                                 self.isStartFlag = false
-                                                NotificationCenter.default.removeObserver(self)
+//                                                NotificationCenter.default.removeObserver(self)
                                                 completion(false, message)
                                             } else {
                                                 let log: String = getLocalTimeString() + " , (Jupiter) Error : Load Abnormal Area"
                                                 message = log
                                                 self.isStartFlag = false
-                                                NotificationCenter.default.removeObserver(self)
+//                                                NotificationCenter.default.removeObserver(self)
                                                 completion(false, message)
                                             }
                                         }
@@ -777,13 +777,13 @@ public class ServiceManager: Observation {
                                 let log: String = getLocalTimeString() + " , (Jupiter) Error : Network is not connected"
                                 message = log
                                 self.isStartFlag = false
-                                NotificationCenter.default.removeObserver(self)
+//                                NotificationCenter.default.removeObserver(self)
                                 completion(false, message)
                             } else {
                                 let log: String = getLocalTimeString() + " , (Jupiter) Error : Load Building & Level Information"
                                 message = log
                                 self.isStartFlag = false
-                                NotificationCenter.default.removeObserver(self)
+//                                NotificationCenter.default.removeObserver(self)
                                 completion(false, message)
                             }
                         }
@@ -794,13 +794,13 @@ public class ServiceManager: Observation {
                         let log: String = getLocalTimeString() + " , (Jupiter) Error : Network is not connected"
                         message = log
                         self.isStartFlag = false
-                        NotificationCenter.default.removeObserver(self)
+//                        NotificationCenter.default.removeObserver(self)
                         completion(false, message)
                     } else {
                         let log: String = getLocalTimeString() + " , (Jupiter) Error : User Login"
                         message = log
                         self.isStartFlag = false
-                        NotificationCenter.default.removeObserver(self)
+//                        NotificationCenter.default.removeObserver(self)
                         completion(false, message)
                     }
                 }
@@ -868,7 +868,7 @@ public class ServiceManager: Observation {
         var message: String = localTime + " , (Jupiter) Success : Stop Service"
         
         if (self.isStartComplete) {
-            NotificationCenter.default.removeObserver(self)
+//            NotificationCenter.default.removeObserver(self)
             
             self.stopTimer()
             self.stopBLE()
@@ -914,7 +914,7 @@ public class ServiceManager: Observation {
             self.backgroundUvTimer!.schedule(deadline: .now(), repeating: UVD_INTERVAL)
             self.backgroundUvTimer!.setEventHandler(handler: self.userVelocityTimerUpdate)
             self.backgroundUvTimer!.resume()
-            
+        
             self.bleTrimed = [String: [[Double]]]()
             self.bleAvg = [String: Double]()
             self.reporting(input: BACKGROUND_FLAG)
