@@ -142,7 +142,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         if let bleName = discoveredPeripheral.name {
             
             if bleName.contains("TJ-") {
-//                print(getLocalTimeString() + " BLE is scanning")
                 let deviceIDString = bleName.substring(from: 8, to: 15)
                 
                 var userInfo = [String:String]()
@@ -151,8 +150,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                 userInfo["RSSI"] = String(format: "%d", RSSI.intValue )
                 
                 let bleTime = getCurrentTimeInMilliseconds()
-                let validTime = self.BLE_VALID_TIME
-                bleDiscoveredTime = bleTime
+                let validTime = (self.BLE_VALID_TIME*2)
+                self.bleDiscoveredTime = bleTime
                 
                 if RSSI.intValue != 127 {
                     NotificationCenter.default.post(name: .scanInfo, object: nil, userInfo: userInfo)
