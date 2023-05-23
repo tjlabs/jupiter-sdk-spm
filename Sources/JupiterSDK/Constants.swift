@@ -10,12 +10,9 @@ var SECTOR_URL = "https://where-run-user" + REGION + "/sector"
 var GEO_URL = "https://where-run-param" + REGION + "/geo"
 var RCR_URL = "https://where-run-param" + REGION + "/rcr"
 var RC_URL = "https://where-run-param" + REGION + "/rc"
-var TRAJ_URL = "https://where-run-param" + REGION + "/traj"
-var DEBUG_URL = "https://where-run-param" + REGION + "/md"
 
-var RF_URL = "https://where-run-record" + SERVER_TYPE + REGION + "/recordRF"
-var UV_URL = "https://where-run-record" + SERVER_TYPE + REGION + "/recordUV"
-var MR_URL = "https://where-run-record" + SERVER_TYPE + REGION + "/recordMR"
+var RF_URL = "https://where-run-record" + REGION + "/recordRF"
+var UV_URL = "https://where-run-record" + REGION + "/recordUV"
 var RECENT_URL = "https://where-run-user" + REGION + "/recent"
 
 var CALC_URL = "https://where-run-ios"
@@ -32,6 +29,7 @@ var FLT_URL = BASE_URL + "FLT"
 var CLC_URL = BASE_URL + "CLC"
 var OSA_URL = BASE_URL + "OSA"
 var OSR_URL = BASE_URL + "OSR"
+//var GEO_URL = BASE_URL + "GEO"
 // ---------- Network ----------  //
 
 let R2D: Double = 180 / Double.pi
@@ -101,12 +99,11 @@ public func setBaseURL(url: String) {
     GEO_URL = "https://where-run-param" + REGION + "/geo"
     RCR_URL = "https://where-run-param" + REGION + "/rcr"
     RC_URL = "https://where-run-param" + REGION + "/rc"
-    TRAJ_URL = "https://where-run-param" + REGION + "/traj"
-    DEBUG_URL = "https://where-run-param" + REGION + "/md"
     
-    RF_URL = "https://where-run-record" + SERVER_TYPE + REGION + "/recordRF"
-    UV_URL = "https://where-run-record" + SERVER_TYPE + REGION + "/recordUV"
-    RECENT_URL = "https://where-run-user" + SERVER_TYPE + REGION + "/recent"
+    RF_URL = "https://where-run-record" + REGION + "/recordRF"
+    UV_URL = "https://where-run-record" + REGION + "/recordUV"
+    RECENT_URL = "https://where-run-user" + REGION + "/recent"
+
 
     CLD_URL = BASE_URL + "CLD"
     CLE_URL = BASE_URL + "CLE"
@@ -114,4 +111,5 @@ public func setBaseURL(url: String) {
     CLC_URL = BASE_URL + "CLC"
     OSA_URL = BASE_URL + "OSA"
     OSR_URL = BASE_URL + "OSR"
+//    GEO_URL = BASE_URL + "GEO"
 }

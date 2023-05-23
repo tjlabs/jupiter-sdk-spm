@@ -8,10 +8,6 @@ let VENUS_FLAG: Int = 3
 let JUPITER_FLAG: Int = 4
 let NETWORK_WAITING_FLAG: Int = 5
 let NETWORK_CONNECTION_FLAG: Int = 6
-let BACKGROUND_FLAG: Int = 7
-let FOREGROUND_FLAG: Int = 8
-let RFD_FLAG: Int = 9
-let UVD_FLAG: Int = 10
 
 public protocol Observable {
     func addObserver(_ observer: Observer)

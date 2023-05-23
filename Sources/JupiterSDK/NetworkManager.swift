@@ -6,12 +6,12 @@ public class NetworkManager {
     let TIMEOUT_VALUE_PUT: Double = 5.0
     let TIMEOUT_VALUE_POST: Double = 5.0
     
-    func postReceivedForce(url: String, input: [ReceivedForce], completion: @escaping (Int, String) -> Void){
+    func putReceivedForce(url: String, input: [ReceivedForce], completion: @escaping (Int, String) -> Void){
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
 
-        requestURL.httpMethod = "POST"
+        requestURL.httpMethod = "PUT"
         let encodingData = JSONConverter.encodeJson(param: input)
         if (encodingData != nil) {
             requestURL.httpBody = encodingData
@@ -33,7 +33,7 @@ public class NetworkManager {
             let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 // [error가 존재하면 종료]
                 guard error == nil else {
-                    completion(500, error?.localizedDescription ?? "Fail to send bluetooth data")
+                    completion(500, error?.localizedDescription ?? "Fail")
                     return
                 }
 
@@ -41,14 +41,14 @@ public class NetworkManager {
                 let successsRange = 200..<300
                 guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
                 else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail to send bluetooth data")
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
                     return
                 }
 
                 // [response 데이터 획득]
                 let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
                 guard let resultLen = data else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail to send bluetooth data")
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
                     return
                 }
 
@@ -59,21 +59,21 @@ public class NetworkManager {
 //                    print("RESPONSE RF 데이터 :: ", resultCode)
 //                    print("====================================")
 //                    print("")
-                    completion(resultCode, "Fail to send bluetooth data")
+                    completion(resultCode, "(Jupiter) Success Send RFD")
                 }
             })
             dataTask.resume()
         } else {
-            completion(406, "Fail to encode RFD")
+            completion(500, "(Jupiter) Fail to encode RFD")
         }
     }
 
-    func postUserVelocity(url: String, input: [UserVelocity], completion: @escaping (Int, String) -> Void) {
+    func putUserVelocity(url: String, input: [UserVelocity], completion: @escaping (Int, String) -> Void) {
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
 
-        requestURL.httpMethod = "POST"
+        requestURL.httpMethod = "PUT"
         let encodingData = JSONConverter.encodeJson(param: input)
         if (encodingData != nil) {
             requestURL.httpBody = encodingData
@@ -94,7 +94,7 @@ public class NetworkManager {
             let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 // [error가 존재하면 종료]
                 guard error == nil else {
-                    completion(500, error?.localizedDescription ?? "Fail to send sensor measurements")
+                    completion(500, error?.localizedDescription ?? "Fail")
                     return
                 }
 
@@ -102,14 +102,14 @@ public class NetworkManager {
                 let successsRange = 200..<300
                 guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
                 else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail to send sensor measurements")
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
                     return
                 }
 
                 // [response 데이터 획득]
                 let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
                 guard let resultLen = data else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail to send sensor measurements")
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
                     return
                 }
 
@@ -125,7 +125,7 @@ public class NetworkManager {
             })
             dataTask.resume()
         } else {
-            completion(406, "Fail to encode UVD")
+            completion(500, "(Jupiter) Fail to encode UVD")
         }
     }
     
@@ -374,7 +374,7 @@ public class NetworkManager {
         }
     }
     
-    func postFLT(url: String, input: FineLocationTracking, isSufficientRfd: Bool, completion: @escaping (Int, String,  Bool) -> Void) {
+    func postFLT(url: String, input: FineLocationTracking, completion: @escaping (Int, String) -> Void) {
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
@@ -402,7 +402,7 @@ public class NetworkManager {
                 guard error == nil else {
                     // [콜백 반환]
                     DispatchQueue.main.async {
-                        completion(500, error?.localizedDescription ?? "Fail", false)
+                        completion(500, error?.localizedDescription ?? "Fail")
                     }
                     return
                 }
@@ -413,7 +413,7 @@ public class NetworkManager {
                 else {
                     // [콜백 반환]
                     DispatchQueue.main.async {
-                        completion(500, (response as? HTTPURLResponse)?.description ?? "Fail", false)
+                        completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
                     }
                     return
                 }
@@ -421,7 +421,7 @@ public class NetworkManager {
                 // [response 데이터 획득]
                 let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
                 guard let resultLen = data else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail", false)
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
                     return
                 }
                 let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
@@ -434,14 +434,14 @@ public class NetworkManager {
 //                    print("                 :: ", resultData)
 //                    print("====================================")
 //                    print("")
-                    completion(resultCode, resultData, isSufficientRfd)
+                    completion(resultCode, resultData)
                 }
             })
 
             // [network 통신 실행]
             dataTask.resume()
         } else {
-            completion(500, "Fail to encode", false)
+            completion(500, "Fail to encode")
         }
     }
     
@@ -597,8 +597,8 @@ public class NetworkManager {
 //            print("")
             
             let sessionConfig = URLSessionConfiguration.default
-            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
-            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*5
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*5
             let session = URLSession(configuration: sessionConfig)
             let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 
@@ -649,77 +649,6 @@ public class NetworkManager {
         }
     }
     
-    func postTraj(url: String, input: JupiterTraj, completion: @escaping (Int, String) -> Void) {
-        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
-        let urlComponents = URLComponents(string: url)
-        var requestURL = URLRequest(url: (urlComponents?.url)!)
-        
-        requestURL.httpMethod = "POST"
-        let encodingData = JSONConverter.encodeJson(param: input)
-        if (encodingData != nil) {
-            requestURL.httpBody = encodingData
-            requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
-            requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
-            
-//            print("")
-//            print("====================================")
-//            print("POST Traj 데이터 :: ", input)
-//            print("====================================")
-//            print("")
-            
-            let sessionConfig = URLSessionConfiguration.default
-            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
-            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
-            let session = URLSession(configuration: sessionConfig)
-            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
-                
-                // [error가 존재하면 종료]
-                guard error == nil else {
-                    // [콜백 반환]
-                    DispatchQueue.main.async {
-                        completion(500, error?.localizedDescription ?? "Fail")
-                    }
-                    return
-                }
-                
-                // [status 코드 체크 실시]
-                let successsRange = 200..<300
-                guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
-                else {
-                    // [콜백 반환]
-                    DispatchQueue.main.async {
-                        completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
-                    }
-                    return
-                }
-                
-                // [response 데이터 획득]
-                let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
-                guard let resultLen = data else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
-                    return
-                }
-                let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
-                
-                // [콜백 반환]
-                DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Traj 데이터 :: ", resultCode)
-//                    print("                 :: ", resultData)
-//                    print("====================================")
-//                    print("")
-                    completion(resultCode, resultData)
-                }
-            })
-            
-            // [network 통신 실행]
-            dataTask.resume()
-        } else {
-            completion(500, "Fail to encode")
-        }
-    }
-    
     func getJupiterBias(url: String, input: JupiterBiasGet, completion: @escaping (Int, String) -> Void) {
         var urlComponents = URLComponents(string: url)
         urlComponents?.queryItems = [URLQueryItem(name: "device_model", value: input.device_model),
@@ -737,8 +666,8 @@ public class NetworkManager {
 //        print("")
         
         let sessionConfig = URLSessionConfiguration.default
-        sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
-        sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+        sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*5
+        sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*5
         let session = URLSession(configuration: sessionConfig)
         let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
             
@@ -802,8 +731,8 @@ public class NetworkManager {
 //        print("")
         
         let sessionConfig = URLSessionConfiguration.default
-        sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
-        sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+        sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST*5
+        sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST*5
         let session = URLSession(configuration: sessionConfig)
         let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
             
@@ -909,133 +838,6 @@ public class NetworkManager {
             dataTask.resume()
         } else {
             completion(500, "(Jupiter) Fail to encode JupiterBiasPut")
-        }
-    }
-    
-    func postMobileDebug(url: String, input: MobileDebug, completion: @escaping (Int, String) -> Void) {
-        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
-        let urlComponents = URLComponents(string: url)
-        var requestURL = URLRequest(url: (urlComponents?.url)!)
-        
-        requestURL.httpMethod = "POST"
-        let encodingData = JSONConverter.encodeJson(param: input)
-        if (encodingData != nil) {
-            requestURL.httpBody = encodingData
-            requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
-            requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
-            
-            let sessionConfig = URLSessionConfiguration.default
-            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
-            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
-            let session = URLSession(configuration: sessionConfig)
-            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
-                
-                // [error가 존재하면 종료]
-                guard error == nil else {
-                    // [콜백 반환]
-                    completion(500, error?.localizedDescription ?? "Fail")
-                    return
-                }
-                
-                // [status 코드 체크 실시]
-                let successsRange = 200..<300
-                guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
-                else {
-                    // [콜백 반환]
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
-                    return
-                }
-                
-                // [response 데이터 획득]
-                let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
-                guard let resultLen = data else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
-                    return
-                }
-                let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
-                
-                // [콜백 반환]
-                DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Debug 데이터 :: ", resultCode)
-//                    print("====================================")
-//                    print("")
-                    completion(resultCode, resultData)
-                }
-            })
-            
-            // [network 통신 실행]
-            dataTask.resume()
-        } else {
-            completion(500, "Fail to encode")
-        }
-    }
-    
-    func postMobileResult(url: String, input: [MobileResult], completion: @escaping (Int, String) -> Void) {
-        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
-        let urlComponents = URLComponents(string: url)
-        var requestURL = URLRequest(url: (urlComponents?.url)!)
-        
-        requestURL.httpMethod = "POST"
-        let encodingData = JSONConverter.encodeJson(param: input)
-        if (encodingData != nil) {
-            requestURL.httpBody = encodingData
-            requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
-            requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
-            
-//            print("")
-//            print("====================================")
-//            print("POST Mobile Result URL :: ", url)
-//            print("POST Mobile Result 데이터 :: ", input)
-//            print("====================================")
-//            print("")
-            
-            let sessionConfig = URLSessionConfiguration.default
-            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
-            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
-            let session = URLSession(configuration: sessionConfig)
-            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
-                
-                // [error가 존재하면 종료]
-                guard error == nil else {
-                    // [콜백 반환]
-                    completion(500, error?.localizedDescription ?? "Fail")
-                    return
-                }
-                
-                // [status 코드 체크 실시]
-                let successsRange = 200..<300
-                guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
-                else {
-                    // [콜백 반환]
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
-                    return
-                }
-                
-                // [response 데이터 획득]
-                let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
-                guard let resultLen = data else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
-                    return
-                }
-                let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
-                
-                // [콜백 반환]
-                DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Mobile Result 데이터 :: ", resultCode)
-//                    print("====================================")
-//                    print("")
-                    completion(resultCode, resultData)
-                }
-            })
-            
-            // [network 통신 실행]
-            dataTask.resume()
-        } else {
-            completion(500, "Fail to encode")
         }
     }
 }
