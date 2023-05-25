@@ -115,10 +115,10 @@ public struct ServiceResult {
     public var isConverged: Bool = false
     public var mode: String = ""
     public var isPmSuccess: Bool = false
+    public var isIndoor: Bool = false
     
     public var level: String = ""
     public var building: String = ""
-    
 }
 
 // ------------------------------------------------- //

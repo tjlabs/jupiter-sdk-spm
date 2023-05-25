@@ -35,7 +35,8 @@ public class UnitDRGenerator: NSObject {
     
     public func generateDRInfo(sensorData: SensorData) -> UnitDRInfo {
         if (unitMode != MODE_PDR && unitMode != MODE_DR && unitMode != MODE_AUTO) {
-            fatalError("Please check unitMode .. (pdr, dr, auto)")
+            print(getLocalTimeString() + " , (Jupiter) uniMode is forcibly set to auto (\(unitMode) - > MODR_AUTO)")
+            unitMode = MODE_AUTO
         }
         
         let currentTime = getCurrentTimeInMilliseconds()

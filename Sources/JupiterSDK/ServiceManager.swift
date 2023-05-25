@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    var sdkVersion: String = "1.11.34"
+    public static let sdkVersion: String = "1.11.35"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -299,6 +299,9 @@ public class ServiceManager: Observation {
     var flagPast: Bool = false
     var lastOutputTime: Int = 0
     var pastOutputTime: Int = 0
+    var isIndoor: Bool = false
+    var timeForInit: Double = 31
+    public var TIME_INIT_THRESHOLD: Double = 30
     
     public override init() {
         let dateFormatter = DateFormatter()
@@ -316,13 +319,31 @@ public class ServiceManager: Observation {
         print(localTime + " , (Jupiter) OS : \(osVersion)")
     }
     
-    public func initService() -> (Bool, String) {
+    public func initService(service: String, mode: String) -> (Bool, String) {
         let localTime = getLocalTimeString()
         let log: String = localTime + " , (Jupiter) Success : Service Initalization"
         
         var isSuccess: Bool = true
         var message: String = log
         
+        if (service == "FLT") {
+            unitDRInfo = UnitDRInfo()
+            unitDRGenerator.setMode(mode: mode)
+
+            if (mode == "auto") {
+                self.runMode = "dr"
+            } else if (mode == "pdr") {
+                self.runMode = "pdr"
+            } else if (mode == "dr") {
+                self.runMode = "dr"
+            } else {
+                isSuccess = false
+                message = localTime + " , (Jupiter) Error : Invalid Service Mode"
+                return (isSuccess, message)
+            }
+            setModeParam(mode: self.runMode, phase: self.phase)
+        }
+
         // Init Sensors
         let initSensors = initialzeSensors()
         if (!initSensors.0) {
@@ -341,24 +362,6 @@ public class ServiceManager: Observation {
             return (isSuccess, message)
         }
         
-        if (self.service == "FLT") {
-            unitDRInfo = UnitDRInfo()
-            unitDRGenerator.setMode(mode: mode)
-
-            if (mode == "auto") {
-                self.runMode = "dr"
-            } else if (mode == "pdr") {
-                self.runMode = "pdr"
-            } else if (mode == "dr") {
-                self.runMode = "dr"
-            } else {
-                isSuccess = false
-                message = localTime + " , (Jupiter) Error : Invalid Service Mode"
-                return (isSuccess, message)
-            }
-            setModeParam(mode: self.runMode, phase: self.phase)
-        }
-        
         return (isSuccess, message)
     }
     
@@ -367,6 +370,10 @@ public class ServiceManager: Observation {
         setServerUrl(server: self.serverType)
     }
     
+//    public func setMinimumTimeForIndoorReport(time: Double) {
+//        self.TIME_INIT_THRESHOLD = time
+//        self.timeForInit = time + 1
+//    }
     
     public func startService(id: String, sector_id: Int, service: String, mode: String, completion: @escaping (Bool, String) -> Void) {
         let localTime = getLocalTimeString()
@@ -426,7 +433,7 @@ public class ServiceManager: Observation {
             completion(isSuccess, message)
         } else {
             self.isStartFlag = true
-            let initService = self.initService()
+            let initService = self.initService(service: service, mode: mode)
             if (!initService.0) {
                 isSuccess = initService.0
                 message = initService.1
@@ -502,9 +509,6 @@ public class ServiceManager: Observation {
                                                 if let utf8Text = String(data: responseData, encoding: .utf8) {
                                                     ( self.PathPoint[key], self.PathMagScale[key], self.PathHeading[key] ) = self.parseRoad(data: utf8Text)
                                                     self.isLoadEnd[key] = [true, true]
-//                                                    print("PathPoint \(key) = \(self.PathPoint[key])")
-//                                                    print("PathMagScale \(key) = \(self.PathMagScale[key])")
-//                                                    print("PathHeading \(key) = \(self.PathHeading[key])")
                                                     let log: String = localTime + " , (Jupiter) Success : Load \(buildingName) \(levelName) Path-Point"
                                                     print(log)
                                                 }
@@ -787,6 +791,8 @@ public class ServiceManager: Observation {
     }
     
     private func initVariables() {
+        self.timeForInit = 0
+        
         self.inputReceivedForce = [ReceivedForce(user_id: "", mobile_time: 0, ble: [:], pressure: 0)]
         self.inputUserVelocity = [UserVelocity(user_id: user_id, mobile_time: 0, index: 0, length: 0, heading: 0, looking: true)]
         self.indexAfterResponse = 0
@@ -898,6 +904,7 @@ public class ServiceManager: Observation {
     internal func initialzeSensors() -> (Bool, String) {
         var isSuccess: Bool = false
         var message: String = ""
+        var unavailableSensors = [String]()
         
         var sensorActive: Int = 0
         if motionManager.isAccelerometerAvailable {
@@ -922,6 +929,7 @@ public class ServiceManager: Observation {
             }
         } else {
             let localTime: String = getLocalTimeString()
+            unavailableSensors.append("Acc")
             let log: String = localTime + " , (Jupiter) Error : Fail to initialize accelerometer"
             print(log)
         }
@@ -942,6 +950,7 @@ public class ServiceManager: Observation {
             }
         } else {
             let localTime: String = getLocalTimeString()
+            unavailableSensors.append("Gyro")
             let log: String = localTime + " , (Jupiter) Error : Fail to initialize gyroscope"
             print(log)
         }
@@ -1001,12 +1010,13 @@ public class ServiceManager: Observation {
             }
         } else {
             let localTime: String = getLocalTimeString()
+            unavailableSensors.append("Mag")
             let log: String = localTime + " , (Jupiter) Error : Fail to initialize magnetometer\n"
             print(log)
         }
         
         if CMAltimeter.isRelativeAltitudeAvailable() {
-            sensorActive += 1
+//            sensorActive += 1
             motionAltimeter.startRelativeAltitudeUpdates(to: .main) { [self] (data, error) in
                 if let pressure = data?.pressure {
                     let pressure_: Double = Double(pressure)*10
@@ -1017,6 +1027,7 @@ public class ServiceManager: Observation {
             }
         } else {
             let localTime: String = getLocalTimeString()
+            unavailableSensors.append("Pressure")
             let log: String = localTime + " , (Jupiter) Error : Fail to initialize pressure sensor"
             print(log)
         }
@@ -1095,18 +1106,19 @@ public class ServiceManager: Observation {
             }
         } else {
             let localTime: String = getLocalTimeString()
+            unavailableSensors.append("Motion")
             let log: String = localTime + " , (Jupiter) Error : Fail to initialize motion sensor"
             print(log)
         }
         
         let localTime: String = getLocalTimeString()
-        if (sensorActive >= 5) {
+        if (sensorActive >= 4) {
             let log: String = localTime + " , (Jupiter) Success : Sensor Initialization"
             
             isSuccess = true
             message = log
         } else {
-            let log: String = localTime + " , (Jupiter) Error : Sensor is not available"
+            let log: String = localTime + " , (Jupiter) Error : Sensor is not available \(unavailableSensors)"
             
             isSuccess = false
             message = log
@@ -1373,16 +1385,22 @@ public class ServiceManager: Observation {
                             if (lastResult.building_name != "" && lastResult.level_name == "B0") {
                                 self.initVariables()
                                 self.isActiveReturn = false
+                                self.isIndoor = false
+                                displayOutput.isIndoor = false
                                 self.reporting(input: OUTDOOR_FLAG)
                             } else if (isInPathMatchingArea.0) {
                                 self.initVariables()
                                 self.isActiveReturn = false
+                                self.isIndoor = false
+                                displayOutput.isIndoor = false
                                 self.reporting(input: OUTDOOR_FLAG)
                             } else {
                                 // 3 min
-                                if (self.timeActiveRF >= SLEEP_THRESHOLD_RF*10*3) {
+                                if (self.timeActiveRF >= SLEEP_THRESHOLD_RF) {
                                     self.initVariables()
                                     self.isActiveReturn = false
+                                    self.isIndoor = false
+                                    displayOutput.isIndoor = false
                                     self.reporting(input: OUTDOOR_FLAG)
                                 }
                             }
@@ -1401,6 +1419,10 @@ public class ServiceManager: Observation {
         } else {
             let log: String = localTime + " , (Jupiter) Warnings : Fail to get recent ble"
             print(log)
+        }
+        
+        if (!self.isIndoor) {
+            self.timeForInit += RFD_INTERVAL
         }
     }
     
@@ -1712,13 +1734,21 @@ public class ServiceManager: Observation {
                     }
                     
                     if (result.mobile_time > self.preOutputMobileTime) {
-//                        print(localTime + " , (Jupiter) Phase 3 Result : \(result.level_name) , \(result.phase)")
                         if (!self.isGetFirstResponse) {
                             self.isGetFirstResponse = true
                             if (self.isActiveReturn) {
+                                self.isIndoor = true
+                                displayOutput.isIndoor = true
                                 self.reporting(input: INDOOR_FLAG)
                             }
                         }
+//                        if (!self.isGetFirstResponse && (self.timeForInit >= TIME_INIT_THRESHOLD)) {
+//                            self.isGetFirstResponse = true
+//                            self.isIndoor = true
+//                            displayOutput.isIndoor = true
+//                            self.isActiveReturn = true
+//                            self.reporting(input: INDOOR_FLAG)
+//                        }
                         displayOutput.indexRx = result.index
                         
                         // Check Bias Re-estimation is needed
@@ -2143,26 +2173,11 @@ public class ServiceManager: Observation {
             if (!self.isActiveReturn) {
                 let validTime = self.BLE_VALID_TIME
                 let bleAvg = avgBleData(bleDictionary: self.bleTrimed)
-                let isStrong = checkSufficientRfd(bleDict: bleAvg, CONDITION: -87, COUNT: 2)
+                let isStrong = checkSufficientRfd(bleDict: bleAvg, CONDITION: -90, COUNT: 2)
                 if (isStrong) {
                     self.reporting(input: INDOOR_FLAG)
                     self.isActiveReturn = true
                 }
-                
-//                let bleDictionary: Dictionary<String, [[Double]]>? = bleManager.bleDictionary
-//                if let bleData = bleDictionary {
-//                    let bleTrimed = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
-//                    let bleAvg = avgBleData(bleDictionary: bleTrimed)
-//
-//                    let isStrong = checkSufficientRfd(bleDict: bleAvg, CONDITION: -87, COUNT: 2)
-//                    if (isStrong) {
-//                        self.reporting(input: INDOOR_FLAG)
-//                        self.isActiveReturn = true
-//                    }
-//                } else {
-//                    let log: String = localTime + " , (Jupiter) Warnings : Fail to get recent ble"
-//                    print(log)
-//                }
             }
             
             let currentTime = getCurrentTimeInMilliseconds()
@@ -3326,14 +3341,6 @@ public class ServiceManager: Observation {
     
     func compensateHeading(heading: Double, mode: String) -> Double {
         var headingToReturn: Double = heading
-//        if (mode == "pdr") {
-//
-//        } else {
-//            if (headingToReturn < 0) {
-//                headingToReturn = headingToReturn + 360
-//            }
-//            headingToReturn = headingToReturn - floor(headingToReturn/360)*360
-//        }
         if (headingToReturn < 0) {
             headingToReturn = headingToReturn + 360
         }
