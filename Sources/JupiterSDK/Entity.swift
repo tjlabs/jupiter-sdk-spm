@@ -101,6 +101,24 @@ public struct UnitDRInfo {
     }
 }
 
+public struct TrajectoryInfo {
+    public var index: Int = 0
+    public var length: Double = 0
+    public var heading: Double = 0
+    public var velocity: Double = 0
+    public var lookingFlag: Bool = false
+    public var isIndexChanged: Bool = false
+    public var numChannels: Int = 0
+    public var scc: Double = 0
+    public var userBuilding: String = ""
+    public var userLevel: String = ""
+    public var userX: Double = 0
+    public var userY: Double = 0
+    public var userHeading: Double = 0
+    public var userPmSuccess: Bool = false
+    public var userTuHeading: Double = 0
+}
+
 public struct ServiceResult {
     public var isIndexChanged: Bool = false
     
@@ -115,10 +133,14 @@ public struct ServiceResult {
     public var isConverged: Bool = false
     public var mode: String = ""
     public var isPmSuccess: Bool = false
-    public var isIndoor: Bool = false
     
     public var level: String = ""
     public var building: String = ""
+    
+    public var userTrajectory: [[Double]] = [[0, 0]]
+    public var trajectoryStartCoord: [Double] = [0, 0]
+    public var searchArea: [[Double]] = [[0, 0]]
+    public var searchType: Int = 0
 }
 
 // ------------------------------------------------- //
@@ -220,6 +242,7 @@ struct CoarseLocationEstimation: Encodable {
     var user_id: String
     var mobile_time: Int
     var sector_id: Int
+    var search_direction_list: [Int]
 }
 
 public struct CoarseLocationEstimationResult: Codable {
@@ -254,8 +277,11 @@ struct FineLocationTracking: Encodable {
     var level_name: String
     var spot_id: Int
     var phase: Int
+    var search_range: [Int]
+    var search_direction_list: [Int]
     var rss_compensation_list: [Int]
     var sc_compensation_list: [Double]
+    var tail_index: Int
 }
 
 public struct FineLocationTrackingFromServer: Codable {
@@ -271,6 +297,7 @@ public struct FineLocationTrackingFromServer: Codable {
     public var index: Int
     public var rss_compensation: Int
     public var sc_compensation: Double
+    public var search_direction: Int
     
     public init() {
         self.mobile_time = 0
@@ -285,6 +312,7 @@ public struct FineLocationTrackingFromServer: Codable {
         self.index = 0
         self.rss_compensation = 0
         self.sc_compensation = 0
+        self.search_direction = 0
     }
 }
 
@@ -302,6 +330,7 @@ public struct FineLocationTrackingResult: Codable {
     public var velocity: Double
     public var mode: String
     public var ble_only_position: Bool
+    public var isIndoor: Bool
     
     public init() {
         self.mobile_time = 0
@@ -317,6 +346,7 @@ public struct FineLocationTrackingResult: Codable {
         self.velocity = 0
         self.mode = ""
         self.ble_only_position = false
+        self.isIndoor = false
     }
 }
 
@@ -334,6 +364,8 @@ public struct OnSpotRecognitionResult: Codable {
     public var linked_level_name: String
     public var spot_id: Int
     public var spot_distance: Double
+    public var spot_range: [Int]
+    public var spot_direction_list: [Int]
 
     public init() {
         self.mobile_time = 0
@@ -342,6 +374,8 @@ public struct OnSpotRecognitionResult: Codable {
         self.linked_level_name = ""
         self.spot_id = 0
         self.spot_distance = 0
+        self.spot_range = []
+        self.spot_direction_list = []
     }
 }
 
@@ -445,11 +479,88 @@ public struct JupiterBiasPost: Encodable {
     var rss_compensation: Int
 }
 
+// Traj
+public struct JupiterTraj: Encodable {
+    var sector_id: Int
+}
+
+public struct JupiterTrajResult: Codable {
+    var trajectory_length: Int
+    var trajectory_diagonal: Int
+    
+    public init() {
+        self.trajectory_length = 0
+        self.trajectory_diagonal = 0
+    }
+}
+
+// Debug
+public struct MobileDebug: Encodable {
+    var sector_id: Int
+}
+
+public struct MobileDebugResult: Codable {
+    public var sector_debug: Bool
+    
+    public init() {
+        self.sector_debug = false
+    }
+}
+
+public struct MobileResult: Encodable {
+    public var user_id: String
+    public var mobile_time: Int
+    public var sector_id: Int
+    public var building_name: String
+    public var level_name: String
+    public var scc: Double
+    public var x: Double
+    public var y: Double
+    public var absolute_heading: Double
+    public var phase: Int
+    public var calculated_time: Double
+    public var index: Int
+    public var velocity: Double
+    public var ble_only_position: Bool
+    public var rss_compensation: Int
+    public var sc_compensation: Double
+}
+
 
 // Recent
 struct RecentResult: Encodable {
     var user_id: String
     var mobile_time: Int
+}
+
+public struct RecentResultFromServer: Codable {
+    public var mobile_time: Int
+    public var building_name: String
+    public var level_name: String
+    public var scc: Double
+    public var x: Double
+    public var y: Double
+    public var absolute_heading: Double
+    public var phase: Int
+    public var calculated_time: Double
+    public var index: Int
+    public var rss_compensation: Int
+    public var sc_compensation: Double
+    
+    public init() {
+        self.mobile_time = 0
+        self.building_name = ""
+        self.level_name = ""
+        self.scc = 0
+        self.x = 0
+        self.y = 0
+        self.absolute_heading = 0
+        self.phase = 0
+        self.calculated_time = 0
+        self.index = 0
+        self.rss_compensation = 0
+        self.sc_compensation = 0
+    }
 }
 
 public func decodeOSA(json: String) -> OnSpotAuthorizationResult {
@@ -476,12 +587,24 @@ public func decodeOSR(json: String) -> OnSpotRecognitionResult {
     return result
 }
 
-public func decodeGEO(json: String) -> JupiterGeoResult {
+public func decodeGeo(json: String) -> JupiterGeoResult {
     let result = JupiterGeoResult.init()
     let decoder = JSONDecoder()
     let jsonString = json
 
     if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterGeoResult.self, from: data) {
+        return decoded
+    }
+
+    return result
+}
+
+public func decodeTraj(json: String) -> JupiterTrajResult {
+    let result = JupiterTrajResult.init()
+    let decoder = JSONDecoder()
+    let jsonString = json
+
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterTrajResult.self, from: data) {
         return decoded
     }
 
@@ -500,6 +623,18 @@ public func decodeRC(json: String) -> JupiterBiasResult {
     return result
 }
 
+
+public func decodeMobileDebug(json: String) -> MobileDebugResult {
+    let result = MobileDebugResult.init()
+    let decoder = JSONDecoder()
+    let jsonString = json
+
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(MobileDebugResult.self, from: data) {
+        return decoded
+    }
+
+    return result
+}
 
 public func CLDtoSD(json: String) -> String {
     let decoder = JSONDecoder()

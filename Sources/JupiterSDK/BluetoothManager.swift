@@ -48,7 +48,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     
     var authorized: Bool = false
     var bluetoothReady:Bool = false
-
+    
     var connected:Bool = false
     var isDeviceReady: Bool = false
     var isTransferring: Bool = false
@@ -79,8 +79,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         
         self.centralManager = CBCentralManager(delegate: self, queue: nil, options: nil)
         
-        NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didEnterBackground, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didBecomeActive, object: nil)
+//        NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didEnterBackground, object: nil)
+//        NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didBecomeActive, object: nil)
     }
     
     var isBluetoothPermissionGranted: Bool {
@@ -93,23 +93,19 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     }
     
     // MARK: - Notification
-    @objc func onDidReceiveNotification(_ notification: Notification) {
-        if notification.name == .didEnterBackground {
-            stopScan()
-            
-            startWaitTimer()
-            
-            startScan(option: .Background)
-        }
-        
-        if notification.name == .didBecomeActive {
-            stopWaitTimer()
-            
-            stopScan()
-            
-            startScan(option: .Foreground)
-        }
-    }
+//    @objc func onDidReceiveNotification(_ notification: Notification) {
+//        if notification.name == .didEnterBackground {
+//            stopScan()
+//            startWaitTimer()
+//            startScan(option: .Background)
+//        }
+//
+//        if notification.name == .didBecomeActive {
+//            stopWaitTimer()
+//            stopScan()
+//            startScan(option: .Foreground)
+//        }
+//    }
     
     // MARK: - CBCentralManagerDelegate
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -142,11 +138,10 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         
         discoveredPeripheral = peripheral
-
+        
         if let bleName = discoveredPeripheral.name {
             
             if bleName.contains("TJ-") {
-                
                 let deviceIDString = bleName.substring(from: 8, to: 15)
                 
                 var userInfo = [String:String]()
@@ -155,8 +150,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                 userInfo["RSSI"] = String(format: "%d", RSSI.intValue )
                 
                 let bleTime = getCurrentTimeInMilliseconds()
-                let validTime = self.BLE_VALID_TIME
-                bleDiscoveredTime = bleTime
+                let validTime = (self.BLE_VALID_TIME*2)
+                self.bleDiscoveredTime = bleTime
                 
                 if RSSI.intValue != 127 {
                     NotificationCenter.default.post(name: .scanInfo, object: nil, userInfo: userInfo)
@@ -305,7 +300,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         if bluetoothReady {
             self.centralManager.scanForPeripherals(withServices: [oneServiceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey : NSNumber(value: true as Bool)])
             self.isScanning = true
-
+            
             NotificationCenter.default.post(name: .startScan, object: nil)
         }
     }
@@ -346,74 +341,84 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     }
     
     // Eddystone parsing
-     func parseURLFromFrame(frameData: NSData) -> NSURL? {
-         if frameData.length > 0 {
-               let count = frameData.length
-               var frameBytes = [UInt8](repeating: 0, count: count)
-               frameData.getBytes(&frameBytes, length: count)
-
-               if let URLPrefix = URLPrefixFromByte(schemeID: frameBytes[2]) {
-                 var output = URLPrefix
-                 for i in 3..<frameBytes.count {
-                   if let encoded = encodedStringFromByte(charVal: frameBytes[i]) {
-                     output.append(encoded)
-                   }
-                 }
-
-                 return NSURL(string: output)
-               }
-             }
-
-             return nil
-      }
+    func parseURLFromFrame(frameData: NSData) -> NSURL? {
+        if frameData.length > 0 {
+            let count = frameData.length
+            var frameBytes = [UInt8](repeating: 0, count: count)
+            frameData.getBytes(&frameBytes, length: count)
+            
+            if let URLPrefix = URLPrefixFromByte(schemeID: frameBytes[2]) {
+                var output = URLPrefix
+                for i in 3..<frameBytes.count {
+                    if let encoded = encodedStringFromByte(charVal: frameBytes[i]) {
+                        output.append(encoded)
+                    }
+                }
+                
+                return NSURL(string: output)
+            }
+        }
+        
+        return nil
+    }
     
-     func URLPrefixFromByte(schemeID: UInt8) -> String? {
+    func URLPrefixFromByte(schemeID: UInt8) -> String? {
         switch schemeID {
         case 0x00:
-          return "http://www."
+            return "http://www."
         case 0x01:
-          return "https://www."
+            return "https://www."
         case 0x02:
-          return "http://"
+            return "http://"
         case 0x03:
-          return "https://"
+            return "https://"
         default:
-          return nil
+            return nil
         }
-      }
-
-       func encodedStringFromByte(charVal: UInt8) -> String? {
+    }
+    
+    func encodedStringFromByte(charVal: UInt8) -> String? {
         switch charVal {
         case 0x00:
-          return ".com/"
+            return ".com/"
         case 0x01:
-          return ".org/"
+            return ".org/"
         case 0x02:
-          return ".edu/"
+            return ".edu/"
         case 0x03:
-          return ".net/"
+            return ".net/"
         case 0x04:
-          return ".info/"
+            return ".info/"
         case 0x05:
-          return ".biz/"
+            return ".biz/"
         case 0x06:
-          return ".gov/"
+            return ".gov/"
         case 0x07:
-          return ".com"
+            return ".com"
         case 0x08:
-          return ".org"
+            return ".org"
         case 0x09:
-          return ".edu"
+            return ".edu"
         case 0x0a:
-          return ".net"
+            return ".net"
         case 0x0b:
-          return ".info"
+            return ".info"
         case 0x0c:
-          return ".biz"
+            return ".biz"
         case 0x0d:
-          return ".gov"
+            return ".gov"
         default:
-          return String(data: Data(bytes: [ charVal ] as [UInt8], count: 1), encoding: .utf8)
+            return String(data: Data(bytes: [ charVal ] as [UInt8], count: 1), encoding: .utf8)
         }
-      }
+    }
+    
+    func getLocalTimeString() -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        dateFormatter.locale = Locale(identifier:"ko_KR")
+        let nowDate = Date()
+        let convertNowStr = dateFormatter.string(from: nowDate)
+        
+        return convertNowStr
+    }
 }
