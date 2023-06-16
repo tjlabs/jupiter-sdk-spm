@@ -1,8 +1,9 @@
 import Foundation
 import CoreMotion
+import UIKit
 
 public class ServiceManager: Observation {
-    public static let  sdkVersion: String = "3.0.3"
+    public static let  sdkVersion: String = "3.0.4"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -131,6 +132,7 @@ public class ServiceManager: Observation {
     
     var receivedForceTimer: DispatchSourceTimer?
     var RFD_INTERVAL: TimeInterval = 1/2 // second
+    var isRfdTimerRunningFinished: Bool = false
     var BLE_VALID_TIME: Double = 1000
     var bleTrimed = [String: [[Double]]]()
     var bleAvg = [String: Double]()
@@ -444,6 +446,11 @@ public class ServiceManager: Observation {
         self.user_id = id
         self.service = service
         self.mode = mode
+        if (mode == "auto") {
+            self.runMode = "dr"
+        } else {
+            self.runMode = mode
+        }
         
         var countBuildingLevel: Int = 0
         
@@ -458,6 +465,8 @@ public class ServiceManager: Observation {
                 setSaveFlag(flag: result.sector_debug)
             }
         })
+        
+//        completion(false, getLocalTimeString() + " , (Jupiter) Error : print error msg")
         
         switch(service) {
         case "SD":
@@ -1623,9 +1632,14 @@ public class ServiceManager: Observation {
         let currentTime = getCurrentTimeInMilliseconds() - (Int(validTime)/2)
         let bleDictionary: [String: [[Double]]]? = bleManager.bleDictionary
         if let bleData = bleDictionary {
-            self.bleTrimed = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
-            self.bleAvg = avgBleData(bleDictionary: self.bleTrimed)
-//            self.bleAvg = ["TJ-00CB-0000031A-0000":-76.0]
+            if (!self.isRfdTimerRunningFinished) {
+                self.isRfdTimerRunningFinished = true
+                self.bleTrimed = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+                self.bleAvg = avgBleData(bleDictionary: self.bleTrimed)
+            }
+            
+//            self.bleAvg = ["TJ-00CB-00000242-0000":-76.0] // S3 7F
+//            self.bleAvg = ["TJ-00CB-000003E7-0000":-76.0] // Plan Group
             
             if (!self.bleAvg.isEmpty) {
                 self.timeBleOff = 0
@@ -1719,6 +1733,8 @@ public class ServiceManager: Observation {
         if (!self.isIndoor) {
             self.timeForInit += RFD_INTERVAL
         }
+        
+        self.isRfdTimerRunningFinished = false
     }
     
     func checkBleChannelNum(bleDict: [String: Double]) -> Int {
@@ -1881,6 +1897,12 @@ public class ServiceManager: Observation {
                             self.isPossibleEstBias = true
                         }
                     }
+                }
+                
+                if (self.isGetFirstResponse) {
+                    // Check Entrance Level
+                    let isEntrance = self.checkIsEntranceLevel(result: lastResult)
+                    unitDRGenerator.setIsEntranceLevel(flag: isEntrance)
                 }
                 
                 // Make User Trajectory Buffer
@@ -4037,10 +4059,6 @@ public class ServiceManager: Observation {
                     }
                 })
             }
-            
-            // Check Entrance Level
-            let isEntrance = self.checkIsEntranceLevel(result: lastResult)
-            unitDRGenerator.setIsEntranceLevel(flag: isEntrance)
         } else {
             self.travelingOsrDistance = 0
         }
