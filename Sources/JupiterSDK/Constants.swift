@@ -6,6 +6,7 @@ var REGION = "-skrgq3jc5a-du.a.run.app"
 var IMAGE_URL = "jupiter_image"
 
 var USER_URL = "https://where-run-user" + REGION + "/user"
+var LOGIN_URL = "https://where-run-user" + REGION + "/login"
 var SECTOR_URL = "https://where-run-user" + REGION + "/sector"
 var GEO_URL = "https://where-run-param" + REGION + "/geo"
 var RCR_URL = "https://where-run-param" + REGION + "/rcr"

@@ -6,12 +6,21 @@ struct UserInfo: Codable {
     var os_version: Int
 }
 
+struct UserLogin: Codable {
+    var user_id: String
+    var device_model: String
+    var os_version: Int
+    var sdk_version: String
+}
+
 struct SectorInfo: Codable {
     var sector_id: Int
 }
 
 struct SectorInfoResult: Codable {
     var building_level: [[String]]
+    var entrance_wards: [String]
+    var entrance_scales: [[Double]]
 }
  
 struct CardList: Codable {
@@ -524,6 +533,7 @@ public struct MobileResult: Encodable {
     public var ble_only_position: Bool
     public var rss_compensation: Int
     public var sc_compensation: Double
+    public var is_indoor: Bool
 }
 
 
@@ -561,6 +571,15 @@ public struct RecentResultFromServer: Codable {
         self.rss_compensation = 0
         self.sc_compensation = 0
     }
+}
+
+public struct JupiterToDisplay {
+    var x: Double = 0
+    var y: Double = 0
+    var heading: Double = 0
+    var building: String = ""
+    var level: String = ""
+    var isIndoor: Bool = false
 }
 
 public func decodeOSA(json: String) -> OnSpotAuthorizationResult {

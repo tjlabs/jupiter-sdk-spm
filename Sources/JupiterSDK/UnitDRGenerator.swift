@@ -177,6 +177,10 @@ public class UnitDRGenerator: NSObject {
         self.drDistanceEstimator.velocityScaleFactor = scaleFactor
     }
     
+    public func setScVelocityScaleFactor(scaleFactor: Double) {
+        self.drDistanceEstimator.scVelocityScaleFactor = scaleFactor
+    }
+    
     public func setIsEntranceLevel (flag: Bool) {
         self.isEnteranceLevel = flag
     }

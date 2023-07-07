@@ -34,6 +34,7 @@ public class DRDistanceEstimator: NSObject {
     public var preVelocitySmoothing: Double = 0
     
     public var velocityScaleFactor: Double = 1.0
+    public var scVelocityScaleFactor: Double = 1.0
     
     public var distance: Double = 0
     
@@ -165,7 +166,7 @@ public class DRDistanceEstimator: NSObject {
         } else if velocityInput > VELOCITY_MAX {
             velocityInput = VELOCITY_MAX
         }
-        var velocityInputScale = velocityInput*self.velocityScaleFactor
+        var velocityInputScale = velocityInput*self.velocityScaleFactor*self.scVelocityScaleFactor
         if velocityInputScale < VELOCITY_MIN {
             velocityInputScale = 0
         } else if velocityInputScale > VELOCITY_MAX {
