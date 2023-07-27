@@ -7,6 +7,7 @@ public class UnitDRGenerator: NSObject {
     }
     
     var STEP_VALID_TIME: Double = 1000
+    let RF_SC_THRESHOLD_PDR: Double = 0.55
     
     public var unitMode = String()
     
@@ -20,6 +21,9 @@ public class UnitDRGenerator: NSObject {
     var pdrQueue = LinkedList<DistanceInfo>()
     var drQueue = LinkedList<DistanceInfo>()
     var autoMode: Int = 0
+    var lastModeChangedTime: Double = 0
+    var lastHighRfSccTime: Double = 0
+    var isPdrMode: Bool = false
     
     var normalStepTime: Double = 0
     var unitIndexAuto = 0
@@ -28,6 +32,8 @@ public class UnitDRGenerator: NSObject {
     var prePitch: Double = 0
     
     public var isEnteranceLevel: Bool = false
+    public var rfScc: Double = 0
+    public var isSufficientRfdBuffer: Bool = false
     
     public func setMode(mode: String) {
         unitMode = mode
@@ -39,7 +45,7 @@ public class UnitDRGenerator: NSObject {
             unitMode = MODE_AUTO
         }
         
-        let currentTime = getCurrentTimeInMilliseconds()
+        let currentTime = getCurrentTimeInMillisecondsDouble()
         
         var curAttitudeDr = Attitude(Roll: 0, Pitch: 0, Yaw: 0)
         var curAttitudePdr = Attitude(Roll: 0, Pitch: 0, Yaw: 0)
@@ -94,30 +100,54 @@ public class UnitDRGenerator: NSObject {
             unitDistancePdr = pdrDistanceEstimator.estimateDistanceInfo(time: currentTime, sensorData: sensorData)
             unitDistanceDr = drDistanceEstimator.estimateDistanceInfo(time: currentTime, sensorData: sensorData)
             
-            var isPossibleDrLevel = pdrDistanceEstimator.normalStepCountFlag
-            if (self.isEnteranceLevel) {
-                isPossibleDrLevel = false
+            if (self.isSufficientRfdBuffer) {
+                if (self.isPdrMode && self.rfScc >= RF_SC_THRESHOLD_PDR) {
+                    self.lastHighRfSccTime = currentTime
+                }
             }
             
-            if (isPossibleDrLevel) {
+            var isNormalStep = pdrDistanceEstimator.normalStepCountFlag
+            if (currentTime - lastModeChangedTime >= 5*1000) {
+                if (!self.isPdrMode && isNormalStep) {
+                    // 현재 DR Mode인데 Normal Step 20회 검출 -> PDR로 전환
+                    self.isPdrMode = true
+                    self.lastModeChangedTime = currentTime
+                } else {
+                    // 현재 PDR Mode
+                    if (self.rfScc < RF_SC_THRESHOLD_PDR && self.isSufficientRfdBuffer) {
+                        // RF SCC가 낮은 경우 -> DR 모드로 전환
+                        self.isPdrMode = false
+                        self.lastModeChangedTime = currentTime
+                    } else if (currentTime - self.lastHighRfSccTime > 10*1000) {
+                        // RF SCC가 낮은 상황이 10초 이상 나오는 경우 -> DR 모드로 전환
+                        self.isPdrMode = false
+                        self.lastModeChangedTime = currentTime
+                    }
+                }
+                
+                if (self.isEnteranceLevel) {
+                    self.isPdrMode = false
+                    self.lastModeChangedTime = currentTime
+                }
+            }
+            
+            if (self.isPdrMode) {
+                // PDR 가능 영역
                 if (unitDistancePdr.isIndexChanged) {
                     unitIndexAuto += 1
                 }
                 unitDistanceAuto = unitDistancePdr
                 self.autoMode = 0
-                normalStepTime = getCurrentTimeInMilliseconds()
+                normalStepTime = currentTime
             } else {
+                // PDR 불가능 영역
                 unitDistanceAuto = unitDistanceDr
                 if (unitDistanceDr.isIndexChanged) {
                     unitIndexAuto += 1
                 }
                 self.autoMode = 1
             }
-            
-            if ((getCurrentTimeInMilliseconds() - normalStepTime) >= 5*1000) {
-                unitDistanceAuto = unitDistanceDr
-                self.autoMode = 1
-            }
+            // ------------------------------- Add ------------------------------- //
             
             var sensorAtt = sensorData.att
             if (sensorAtt[0].isNaN) {
@@ -185,18 +215,10 @@ public class UnitDRGenerator: NSObject {
         self.isEnteranceLevel = flag
     }
     
-    func getCurrentTimeInMilliseconds() -> Double
-    {
-        return Double(Date().timeIntervalSince1970 * 1000)
-    }
-    
-    func getLocalTimeString() -> String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
-        dateFormatter.locale = Locale(identifier:"ko_KR")
-        let nowDate = Date()
-        let convertNowStr = dateFormatter.string(from: nowDate)
+    public func setRfScc(scc: Double, isSufficient: Bool) {
+        self.rfScc = scc
+        self.isSufficientRfdBuffer = isSufficient
         
-        return convertNowStr
+        self.drDistanceEstimator.setRfScc(scc: scc, isSufficient: isSufficient)
     }
 }

@@ -182,6 +182,57 @@ public class NetworkManager {
         dataTask.resume()
     }
     
+    func postInfo(url: String, input: Info, completion: @escaping (Int, String) -> Void) {
+        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
+        let urlComponents = URLComponents(string: url)
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+        
+        requestURL.httpMethod = "POST"
+        let encodingData = JSONConverter.encodeJson(param: input)
+        requestURL.httpBody = encodingData
+        requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
+        
+        // [http 요청 수행 실시]
+//        print("")
+//        print("====================================")
+//        print("POST INFO URL :: ", url)
+//        print("POST INFO 데이터 :: ", input)
+//        print("====================================")
+//        print("")
+        
+        let dataTask = URLSession.shared.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            // [error가 존재하면 종료]
+            guard error == nil else {
+                // [콜백 반환]
+                completion(500, error?.localizedDescription ?? "Fail")
+                return
+            }
+            
+            // [status 코드 체크 실시]
+            let successsRange = 200..<300
+            guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+            else {
+                // [콜백 반환]
+                completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                return
+            }
+            
+            // [response 데이터 획득]
+            let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+            let resultLen = data! // [데이터 길이]
+            let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
+            
+            // [콜백 반환]
+            DispatchQueue.main.async {
+                completion(resultCode, resultData)
+            }
+        })
+        
+        // [network 통신 실행]
+        dataTask.resume()
+    }
+    
     func postReceivedForce(url: String, input: [ReceivedForce], completion: @escaping (Int, String) -> Void){
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
         let urlComponents = URLComponents(string: url)
@@ -488,7 +539,6 @@ public class NetworkManager {
         }
     }
     
-    // Coarse Location Estimation Service
     func postOSA(url: String, input: OnSpotAuthorization, completion: @escaping (Int, String) -> Void) {
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
         let urlComponents = URLComponents(string: url)
@@ -565,6 +615,8 @@ public class NetworkManager {
 //            print("")
 //            print("====================================")
 //            print("POST FLT URL :: ", url)
+//            print("POST FLT Sector :: ", input.sector_id)
+//            print("POST FLT ID :: ", input.user_id)
 //            print("POST FLT 데이터 :: ", input)
 //            print("====================================")
 //            print("")
@@ -617,6 +669,74 @@ public class NetworkManager {
             dataTask.resume()
         } else {
             completion(500, "Fail to encode", false)
+        }
+    }
+    
+    func postMock(url: String, input: JupiterMock, completion: @escaping (Int, String) -> Void) {
+        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
+        let urlComponents = URLComponents(string: url)
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+        
+        requestURL.httpMethod = "POST"
+        let encodingData = JSONConverter.encodeJson(param: input)
+        if (encodingData != nil) {
+            requestURL.httpBody = encodingData
+            requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
+            
+//            print("")
+//            print("====================================")
+//            print("POST MOCK URL :: ", url)
+//            print("POST MOCK 데이터 :: ", input)
+//            print("====================================")
+//            print("")
+            
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+                
+                // [error가 존재하면 종료]
+                guard error == nil else {
+                    // [콜백 반환]
+                    DispatchQueue.main.async {
+                        completion(500, error?.localizedDescription ?? "Fail")
+                    }
+                    return
+                }
+                
+                // [status 코드 체크 실시]
+                let successsRange = 200..<300
+                guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+                else {
+                    // [콜백 반환]
+                    DispatchQueue.main.async {
+                        completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    }
+                    return
+                }
+                
+                // [response 데이터 획득]
+                let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+                guard let resultLen = data else {
+                    DispatchQueue.main.async {
+                        completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    }
+                    return
+                }
+                let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
+                
+                // [콜백 반환]
+                DispatchQueue.main.async {
+                    completion(resultCode, resultData)
+                }
+            })
+            
+            // [network 통신 실행]
+            dataTask.resume()
+        } else {
+            completion(500, "Fail to encode")
         }
     }
     
@@ -691,11 +811,11 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-    //        print("")
-    //        print("====================================")
-    //        print("POST OSR 데이터 :: ", input)
-    //        print("====================================")
-    //        print("")
+//            print("")
+//            print("====================================")
+//            print("POST OSR 데이터 :: ", input)
+//            print("====================================")
+//            print("")
 
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
@@ -733,12 +853,12 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-    //                print("")
-    //                print("====================================")
-    //                print("RESPONSE OSR 데이터 :: ", resultCode)
-    //                print("                 :: ", resultData)
-    //                print("====================================")
-    //                print("")
+//                    print("")
+//                    print("====================================")
+//                    print("RESPONSE OSR 데이터 :: ", resultCode)
+//                    print("                 :: ", resultData)
+//                    print("====================================")
+//                    print("")
                     completion(resultCode, resultData)
                 }
             })
@@ -767,6 +887,7 @@ public class NetworkManager {
             
 //            print("")
 //            print("====================================")
+//            print("POST Geo URL :: ", url)
 //            print("POST Geo 데이터 :: ", input)
 //            print("====================================")
 //            print("")
@@ -1201,6 +1322,73 @@ public class NetworkManager {
 //                    print("")
 //                    print("====================================")
 //                    print("RESPONSE Mobile Result 데이터 :: ", resultCode)
+//                    print("====================================")
+//                    print("")
+                    completion(resultCode, resultData)
+                }
+            })
+            
+            // [network 통신 실행]
+            dataTask.resume()
+        } else {
+            completion(500, "Fail to encode")
+        }
+    }
+    
+    func postMobileReport(url: String, input: MobileReport, completion: @escaping (Int, String) -> Void) {
+        // [http 비동기 방식을 사용해서 http 요청 수행 실시]
+        let urlComponents = URLComponents(string: url)
+        var requestURL = URLRequest(url: (urlComponents?.url)!)
+        
+        requestURL.httpMethod = "POST"
+        let encodingData = JSONConverter.encodeJson(param: input)
+        if (encodingData != nil) {
+            requestURL.httpBody = encodingData
+            requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
+            requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
+            
+//            print("")
+//            print("====================================")
+//            print("POST Mobile Report URL :: ", url)
+//            print("POST Mobile Report 데이터 :: ", input)
+//            print("====================================")
+//            print("")
+            
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
+            sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
+            let session = URLSession(configuration: sessionConfig)
+            let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+                
+                // [error가 존재하면 종료]
+                guard error == nil else {
+                    // [콜백 반환]
+                    completion(500, error?.localizedDescription ?? "Fail")
+                    return
+                }
+                
+                // [status 코드 체크 실시]
+                let successsRange = 200..<300
+                guard let statusCode = (response as? HTTPURLResponse)?.statusCode, successsRange.contains(statusCode)
+                else {
+                    // [콜백 반환]
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    return
+                }
+                
+                // [response 데이터 획득]
+                let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
+                guard let resultLen = data else {
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail")
+                    return
+                }
+                let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
+                
+                // [콜백 반환]
+                DispatchQueue.main.async {
+//                    print("")
+//                    print("====================================")
+//                    print("RESPONSE Mobile Report 데이터 :: ", resultCode)
 //                    print("====================================")
 //                    print("")
                     completion(resultCode, resultData)

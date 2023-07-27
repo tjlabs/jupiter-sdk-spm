@@ -4,6 +4,7 @@ extension Array {
 
 }
 
+
 public func += <V> ( left: inout [V], right: V) {
     left.append(right)
 }
@@ -19,6 +20,24 @@ public func + <V>(left: Array<V>, right: V) -> Array<V>
 
     return map
 }
+
+public func sliceArray<T>(_ array: [T], startingFrom index: Int) -> [T] {
+    guard index >= 0 && index < array.count else {
+        return []
+    }
+    
+    return Array(array[index...])
+}
+
+func sliceDoubleArrayToIndex(array: [Double], endIndex: Int) -> [Double]? {
+    // Check if the end index is within valid bounds
+    guard endIndex >= 0, endIndex < array.count else {
+        return nil
+    }
+
+    return Array(array[0...endIndex])
+}
+
 
 public func circularStandardDeviation(for array: [Double]) -> Double {
     guard !array.isEmpty else {

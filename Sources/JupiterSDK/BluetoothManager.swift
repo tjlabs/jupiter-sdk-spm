@@ -9,20 +9,6 @@ let RSSI_BIAS: Double        = 0
 
 let TJLABS_UUID: String          = "0000FEAA-0000-1000-8000-00805f9b34fb";
 
-extension Notification.Name {
-    public static let bluetoothReady      = Notification.Name("bluetoothReady")
-    public static let startScan           = Notification.Name("startScan")
-    public static let stopScan            = Notification.Name("stopScan")
-    public static let foundDevice         = Notification.Name("foundDevice")
-    public static let deviceConnected     = Notification.Name("deviceConnected")
-    public static let deviceReady         = Notification.Name("deviceReady")
-    public static let didReceiveData      = Notification.Name("didReceiveData")
-    public static let scanInfo            = Notification.Name("scanInfo")
-    public static let notificationEnabled = Notification.Name("notificationEnabled")
-    public static let didEnterBackground  = Notification.Name("didEnterBackground")
-    public static let didBecomeActive     = Notification.Name("didBecomeActive")
-}
-
 enum BLEScanOption: Int {
     case Foreground = 1
     case Background
@@ -76,11 +62,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     
     override init() {
         super.init()
-        
         self.centralManager = CBCentralManager(delegate: self, queue: nil, options: nil)
-        
-//        NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didEnterBackground, object: nil)
-//        NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didBecomeActive, object: nil)
     }
     
     var isBluetoothPermissionGranted: Bool {
@@ -91,21 +73,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         }
         return true
     }
-    
-    // MARK: - Notification
-//    @objc func onDidReceiveNotification(_ notification: Notification) {
-//        if notification.name == .didEnterBackground {
-//            stopScan()
-//            startWaitTimer()
-//            startScan(option: .Background)
-//        }
-//
-//        if notification.name == .didBecomeActive {
-//            stopWaitTimer()
-//            stopScan()
-//            startScan(option: .Foreground)
-//        }
-//    }
     
     // MARK: - CBCentralManagerDelegate
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
