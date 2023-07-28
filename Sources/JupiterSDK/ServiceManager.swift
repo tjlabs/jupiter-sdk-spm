@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.0.6"
+    public static let sdkVersion: String = "3.0.6.1"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -339,8 +339,8 @@ public class ServiceManager: Observation {
     // State Observer
     private var venusObserver: Any!
     private var jupiterObserver: Any!
-    private var foregroundObserver: Any!
-    private var backgroundObserver: Any!
+//    private var foregroundObserver: Any!
+//    private var backgroundObserver: Any!
     
     public override init() {
         super.init()
@@ -1024,73 +1024,59 @@ public class ServiceManager: Observation {
         }
     }
     
-    public func enterBackground() {
-        
-    }
-    
-    public func enterForeground() {
-        
-    }
-    
-    private func runBackgroundMode() {
-        if (!self.isBackground) {
-            self.isBackground = true
-            self.bleManager.stopScan()
-            self.stopTimer()
+    public func runBackgroundMode() {
+        self.isBackground = true
+        self.bleManager.stopScan()
+        self.stopTimer()
             
-            if let existingTaskIdentifier = self.backgroundTaskIdentifier {
-                UIApplication.shared.endBackgroundTask(existingTaskIdentifier)
-                self.backgroundTaskIdentifier = .invalid
-            }
+        if let existingTaskIdentifier = self.backgroundTaskIdentifier {
+            UIApplication.shared.endBackgroundTask(existingTaskIdentifier)
+            self.backgroundTaskIdentifier = .invalid
+        }
 
-            self.backgroundTaskIdentifier = UIApplication.shared.beginBackgroundTask(withName: "BackgroundOutputTimer") {
-                UIApplication.shared.endBackgroundTask(self.backgroundTaskIdentifier!)
-                self.backgroundTaskIdentifier = .invalid
-            }
-            
-            if (self.backgroundUpTimer == nil) {
-                self.backgroundUpTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .background))
-                self.backgroundUpTimer!.schedule(deadline: .now(), repeating: UPDATE_INTERVAL)
-                self.backgroundUpTimer!.setEventHandler(handler: self.outputTimerUpdate)
-                self.backgroundUpTimer!.resume()
-            }
-            
-            if (self.backgroundUvTimer == nil) {
-                self.backgroundUvTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .background))
-                self.backgroundUvTimer!.schedule(deadline: .now(), repeating: UVD_INTERVAL)
-                self.backgroundUvTimer!.setEventHandler(handler: self.userVelocityTimerUpdate)
-                self.backgroundUvTimer!.resume()
-            }
-            
-            self.bleTrimed = [String: [[Double]]]()
-            self.bleAvg = [String: Double]()
-            self.reporting(input: BACKGROUND_FLAG)
-            postReport(report: BACKGROUND_FLAG)
+        self.backgroundTaskIdentifier = UIApplication.shared.beginBackgroundTask(withName: "BackgroundOutputTimer") {
+            UIApplication.shared.endBackgroundTask(self.backgroundTaskIdentifier!)
+            self.backgroundTaskIdentifier = .invalid
         }
+            
+        if (self.backgroundUpTimer == nil) {
+            self.backgroundUpTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .background))
+            self.backgroundUpTimer!.schedule(deadline: .now(), repeating: UPDATE_INTERVAL)
+            self.backgroundUpTimer!.setEventHandler(handler: self.outputTimerUpdate)
+            self.backgroundUpTimer!.resume()
+        }
+            
+        if (self.backgroundUvTimer == nil) {
+            self.backgroundUvTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .background))
+            self.backgroundUvTimer!.schedule(deadline: .now(), repeating: UVD_INTERVAL)
+            self.backgroundUvTimer!.setEventHandler(handler: self.userVelocityTimerUpdate)
+            self.backgroundUvTimer!.resume()
+        }
+            
+        self.bleTrimed = [String: [[Double]]]()
+        self.bleAvg = [String: Double]()
+        self.reporting(input: BACKGROUND_FLAG)
+        postReport(report: BACKGROUND_FLAG)
     }
     
-    private func runForegroundMode() {
-        if (self.isBackground) {
-            self.isBackground = false
-            
-            if let existingTaskIdentifier = self.backgroundTaskIdentifier {
-                UIApplication.shared.endBackgroundTask(existingTaskIdentifier)
-                self.backgroundTaskIdentifier = .invalid
-            }
-            
-            self.backgroundUpTimer?.cancel()
-            self.backgroundUvTimer?.cancel()
-            self.backgroundUpTimer = nil
-            self.backgroundUvTimer = nil
-            
-            self.bleManager.startScan(option: .Foreground)
-            
-            self.startTimer()
-            
-            self.isForeground = true
-            self.reporting(input: FOREGROUND_FLAG)
-            postReport(report: FOREGROUND_FLAG)
+    public func runForegroundMode() {
+        if let existingTaskIdentifier = self.backgroundTaskIdentifier {
+            UIApplication.shared.endBackgroundTask(existingTaskIdentifier)
+            self.backgroundTaskIdentifier = .invalid
         }
+            
+        self.backgroundUpTimer?.cancel()
+        self.backgroundUvTimer?.cancel()
+        self.backgroundUpTimer = nil
+        self.backgroundUvTimer = nil
+            
+        self.bleManager.startScan(option: .Foreground)
+            
+        self.startTimer()
+            
+        self.isForeground = true
+        self.reporting(input: FOREGROUND_FLAG)
+        postReport(report: FOREGROUND_FLAG)
     }
     
     private func initVariables() {
@@ -1132,23 +1118,20 @@ public class ServiceManager: Observation {
     }
     
     func notificationCenterAddObserver() {
-        self.backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
-            self.runBackgroundMode()
-        }
-
-        self.foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            self.runForegroundMode()
-        }
+//        self.backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+//            self.runBackgroundMode()
+//        }
+//        self.foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+//            self.runForegroundMode()
+//        }
         
         self.venusObserver = NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didBecomeVenus, object: nil)
         self.jupiterObserver = NotificationCenter.default.addObserver(self, selector: #selector(onDidReceiveNotification), name: .didBecomeJupiter, object: nil)
     }
     
     func notificationCenterRemoveObserver() {
-//        NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
-//        NotificationCenter.default.removeObserver(self, name: UIApplication.didBecomeActiveNotification, object: nil)
-        NotificationCenter.default.removeObserver(self.backgroundObserver)
-        NotificationCenter.default.removeObserver(self.foregroundObserver)
+//        NotificationCenter.default.removeObserver(self.backgroundObserver)
+//        NotificationCenter.default.removeObserver(self.foregroundObserver)
         NotificationCenter.default.removeObserver(self.venusObserver)
         NotificationCenter.default.removeObserver(self.jupiterObserver)
     }
