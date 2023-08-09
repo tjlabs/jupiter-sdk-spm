@@ -1016,7 +1016,7 @@ public class NetworkManager {
         }
     }
     
-    func getJupiterBias(url: String, input: JupiterBiasGet, completion: @escaping (Int, String) -> Void) {
+    func getJupiterParam(url: String, input: JupiterParamGet, completion: @escaping (Int, String) -> Void) {
         var urlComponents = URLComponents(string: url)
         urlComponents?.queryItems = [URLQueryItem(name: "device_model", value: input.device_model),
                                      URLQueryItem(name: "os_version", value: String(input.os_version)),
@@ -1082,7 +1082,7 @@ public class NetworkManager {
         dataTask.resume()
     }
     
-    func getJupiterDeviceBias(url: String, input: JupiterDeviceBiasGet, completion: @escaping (Int, String) -> Void) {
+    func getJupiterDeviceParam(url: String, input: JupiterDeviceParamGet, completion: @escaping (Int, String) -> Void) {
         var urlComponents = URLComponents(string: url)
         urlComponents?.queryItems = [URLQueryItem(name: "device_model", value: input.device_model),
                                      URLQueryItem(name: "sector_id", value: String(input.sector_id))]
@@ -1147,7 +1147,8 @@ public class NetworkManager {
         dataTask.resume()
     }
     
-    func postJupiterBias(url: String, input: JupiterBiasPost, completion: @escaping (Int, String) -> Void){
+    
+    func postJupiterParam(url: String, input: JupiterParamPost, completion: @escaping (Int, String) -> Void){
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
 
@@ -1161,8 +1162,8 @@ public class NetworkManager {
             // [http 요청 수행 실시]
 //            print("")
 //            print("====================================")
-//            print("POST Bias URL :: ", url)
-//            print("POST Bias 데이터 :: ", input)
+//            print("POST Param URL :: ", url)
+//            print("POST Param 데이터 :: ", input)
 //            print("====================================")
 //            print("")
             
@@ -1196,7 +1197,7 @@ public class NetworkManager {
                 DispatchQueue.main.async {
 //                    print("")
 //                    print("====================================")
-//                    print("RESPONSE Bias 데이터 :: ", resultCode)
+//                    print("RESPONSE Param 데이터 :: ", resultCode)
 //                    print("====================================")
 //                    print("")
                     completion(resultCode, "(Jupiter) Success Send Bias")
