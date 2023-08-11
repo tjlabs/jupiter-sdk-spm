@@ -32,10 +32,8 @@ public class UnitDRGenerator: NSObject {
     var prePitch: Double = 0
     
     public var isEnteranceLevel: Bool = false
-    public var rflow: Double = 0
-    public var rflowForVelocity: Double = 0
+    public var rfScc: Double = 0
     public var isSufficientRfdBuffer: Bool = false
-    public var isSufficientRfdVelocityBuffer: Bool = false
     
     public func setMode(mode: String) {
         unitMode = mode
@@ -103,7 +101,7 @@ public class UnitDRGenerator: NSObject {
             unitDistanceDr = drDistanceEstimator.estimateDistanceInfo(time: currentTime, sensorData: sensorData)
             
             if (self.isSufficientRfdBuffer) {
-                if (self.isPdrMode && self.rflow >= RF_SC_THRESHOLD_PDR) {
+                if (self.isPdrMode && self.rfScc >= RF_SC_THRESHOLD_PDR) {
                     self.lastHighRfSccTime = currentTime
                 }
             }
@@ -116,7 +114,7 @@ public class UnitDRGenerator: NSObject {
                     self.lastModeChangedTime = currentTime
                 } else {
                     // 현재 PDR Mode
-                    if (self.rflow < RF_SC_THRESHOLD_PDR && self.isSufficientRfdBuffer) {
+                    if (self.rfScc < RF_SC_THRESHOLD_PDR && self.isSufficientRfdBuffer) {
                         // RF SCC가 낮은 경우 -> DR 모드로 전환
                         self.isPdrMode = false
                         self.lastModeChangedTime = currentTime
@@ -217,12 +215,10 @@ public class UnitDRGenerator: NSObject {
         self.isEnteranceLevel = flag
     }
     
-    public func setRflow(rflow: Double, rflowForVelocity: Double, isSufficient: Bool, isSufficientForVelocity: Bool) {
-        self.rflow = rflow
-        self.rflowForVelocity = rflowForVelocity
+    public func setRfScc(scc: Double, isSufficient: Bool) {
+        self.rfScc = scc
         self.isSufficientRfdBuffer = isSufficient
-        self.isSufficientRfdVelocityBuffer = isSufficientForVelocity
         
-        self.drDistanceEstimator.setRflow(rflow: rflow, rflowForVelocity: rflowForVelocity, isSufficient: isSufficient, isSufficientForVelocity: isSufficientForVelocity)
+        self.drDistanceEstimator.setRfScc(scc: scc, isSufficient: isSufficient)
     }
 }

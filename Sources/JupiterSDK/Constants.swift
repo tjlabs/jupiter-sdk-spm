@@ -12,7 +12,6 @@ var INFO_URL = "https://where-run-user" + REGION + "/info"
 var GEO_URL = "https://where-run-param" + REGION + "/geo"
 var RCR_URL = "https://where-run-param" + REGION + "/rcr"
 var RC_URL = "https://where-run-param" + REGION + "/rc"
-var NS_URL = "https://where-run-param" + REGION + "/ns"
 var TRAJ_URL = "https://where-run-param" + REGION + "/traj"
 var DEBUG_URL = "https://where-run-param" + REGION + "/md"
 
@@ -128,7 +127,6 @@ public func setBaseURL(url: String) {
     GEO_URL = "https://where-run-param" + REGION + "/geo"
     RCR_URL = "https://where-run-param" + REGION + "/rcr"
     RC_URL = "https://where-run-param" + REGION + "/rc"
-    NS_URL = "https://where-run-param" + REGION + "/ns"
     TRAJ_URL = "https://where-run-param" + REGION + "/traj"
     DEBUG_URL = "https://where-run-param" + REGION + "/md"
     

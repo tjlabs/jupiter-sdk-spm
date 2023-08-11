@@ -25,29 +25,18 @@ public func trimBleData(bleInput: [String: [[Double]]], nowTime: Double, validTi
 
 public func avgBleData(bleDictionary: [String: [[Double]]]) -> [String: Double] {
     let digit: Double = pow(10, 2)
-    var ble = [String: Double]()
-    
-    let keys: [String] = Array(bleDictionary.keys)
-    for index in 0..<keys.count {
-        let bleID: String = keys[index]
-        let bleData: [[Double]] = bleDictionary[bleID]!
-        let bleCount = bleData.count
-        
-        var rssiSum: Double = 0
-        
-        for i in 0..<bleCount {
-            let rssi = bleData[i][0]
-            rssiSum += rssi
-        }
-        let rssiFinal: Double = floor(((rssiSum/Double(bleData.count))) * digit) / digit
-        
-        if ( rssiSum == 0 ) {
-            ble.removeValue(forKey: bleID)
-        } else {
-            ble.updateValue(rssiFinal, forKey: bleID)
+    var bleAvg = [String: Double]()
+
+    for (bleID, bleData) in bleDictionary {
+        let bleCount = Double(bleData.count)
+        let rssiSum = bleData.reduce(0.0) { $0 + $1[0] }
+
+        if bleCount > 0 {
+            let averageRSSI = floor((rssiSum / bleCount) * digit) / digit
+            bleAvg[bleID] = averageRSSI
         }
     }
-    return ble
+    return bleAvg
 }
 
 public func checkSufficientRfd(userTrajectory: [TrajectoryInfo]) -> Bool {

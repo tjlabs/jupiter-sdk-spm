@@ -123,12 +123,12 @@ public func decodeTraj(json: String) -> JupiterTrajResult {
     return result
 }
 
-public func decodeParam(json: String) -> JupiterParamResult {
-    let result = JupiterParamResult.init()
+public func decodeRC(json: String) -> JupiterBiasResult {
+    let result = JupiterBiasResult.init()
     let decoder = JSONDecoder()
     let jsonString = json
 
-    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterParamResult.self, from: data) {
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterBiasResult.self, from: data) {
         return decoded
     }
 
