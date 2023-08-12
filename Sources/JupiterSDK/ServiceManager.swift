@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.0.6.5"
+    public static let sdkVersion: String = "3.0.8"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -154,7 +154,7 @@ public class ServiceManager: Observation {
     
     
     // ----- Fine Location Tracking ----- //
-    var rfSurfaceCorrelator = ReceivedForceSurfaceCorrelator()
+    var rflowCorrelator = RflowCorrelator()
     var bleData: [String: [[Double]]]?
     var unitDRInfo = UnitDRInfo()
     var unitDrBuffer: [UnitDRInfo] = []
@@ -1659,9 +1659,9 @@ public class ServiceManager: Observation {
 //            self.bleAvg = ["TJ-00CB-00000242-0000":-76.0] // S3 7F
 //            self.bleAvg = ["TJ-00CB-000003E7-0000":-76.0] // Plan Group
             
-            let isSufficientRfdBuffer = rfSurfaceCorrelator.accumulateRfdBuffer(bleData: self.bleAvg)
-            let isSufficientRfdVelocityBuffer = rfSurfaceCorrelator.accumulateRfdVelocityBuffer(bleData: self.bleAvg)
-            unitDRGenerator.setRfScc(scc: rfSurfaceCorrelator.getRfdScc(), isSufficient: isSufficientRfdBuffer)
+            let isSufficientRfdBuffer = rflowCorrelator.accumulateRfdBuffer(bleData: self.bleAvg)
+            let isSufficientRfdVelocityBuffer = rflowCorrelator.accumulateRfdVelocityBuffer(bleData: self.bleAvg)
+            unitDRGenerator.setRflow(scc: rflowCorrelator.getRflow(), isSufficient: isSufficientRfdBuffer)
 //            unitDRGenerator.setRfScc(scc: 0.0, isSufficient: isSufficientRfdBuffer)
 //            print(getLocalTimeString() + " , (Jupiter) Information : RF SCC = \(rfSurfaceCorrelator.getRfdScc())")
 //            print(getLocalTimeString() + " , (Jupiter) Information : RF SCC (Velocity) = \(rfSurfaceCorrelator.getRfdVelocityScc())")
@@ -1993,7 +1993,7 @@ public class ServiceManager: Observation {
                                     let biasInEntrance = biasEstimator.estimateRssiBiasInEntrance(entranceWard: entranceWards)
                                     print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : bias = \(biasInEntrance) (Position Matched)")
                                     if (self.isBiasConverged) {
-                                        if (abs(biasInEntrance - self.rssiBias) >= 5) {
+                                        if (abs(biasInEntrance - self.rssiBias) >= 7) {
                                             print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : biasDiff = \(abs(biasInEntrance - self.rssiBias)) (Position Matched)")
                                             self.rssiBias = biasInEntrance
                                             self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
@@ -2027,7 +2027,7 @@ public class ServiceManager: Observation {
                                             print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : bias = \(biasInEntrance) (Position Passed)")
                                             
                                             if (self.isBiasConverged) {
-                                                if (abs(biasInEntrance - self.rssiBias) >= 5) {
+                                                if (abs(biasInEntrance - self.rssiBias) >= 7) {
                                                     print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : biasDiff = \(abs(biasInEntrance - self.rssiBias)) (Position Passed)")
                                                     self.rssiBias = biasInEntrance
                                                     self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
@@ -2081,7 +2081,7 @@ public class ServiceManager: Observation {
                             print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : bias = \(biasInEntrance) (End Simulating)")
                             
                             if (self.isBiasConverged) {
-                                if (abs(biasInEntrance - self.rssiBias) >= 5) {
+                                if (abs(biasInEntrance - self.rssiBias) >= 7) {
                                     print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : biasDiff = \(abs(biasInEntrance - self.rssiBias)) (End Simulating)")
                                     self.rssiBias = biasInEntrance
                                     self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)

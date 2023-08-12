@@ -274,7 +274,7 @@ public class DRDistanceEstimator: NSObject {
         velocityQueue.append(data)
     }
     
-    public func setRfScc(scc: Double, isSufficient: Bool) {
+    public func setRflow(scc: Double, isSufficient: Bool) {
         self.rfScc = scc
         self.isSufficientRfdBuffer = isSufficient
     }

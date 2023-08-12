@@ -215,10 +215,10 @@ public class UnitDRGenerator: NSObject {
         self.isEnteranceLevel = flag
     }
     
-    public func setRfScc(scc: Double, isSufficient: Bool) {
+    public func setRflow(scc: Double, isSufficient: Bool) {
         self.rfScc = scc
         self.isSufficientRfdBuffer = isSufficient
         
-        self.drDistanceEstimator.setRfScc(scc: scc, isSufficient: isSufficient)
+        self.drDistanceEstimator.setRflow(scc: scc, isSufficient: isSufficient)
     }
 }
