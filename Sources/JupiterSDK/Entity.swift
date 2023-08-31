@@ -31,10 +31,12 @@ struct Info: Codable {
 struct InfoResult: Codable {
     var building_level: [[String]]
     var entrances: [Entrance]
+    var standard_rss_list: [Int]
     
     init() {
         self.building_level = [[]]
         self.entrances = []
+        self.standard_rss_list = []
     }
 }
 
@@ -179,12 +181,14 @@ public struct ServiceResult {
     public var trajectoryStartCoord: [Double] = [0, 0]
     public var searchArea: [[Double]] = [[0, 0]]
     public var searchType: Int = 0
+    
     public var trajectoryPm: [[Double]] = [[0, 0]]
 }
 
 // ------------------------------------------------- //
 // -------------------- Network -------------------- //
 // ------------------------------------------------- //
+
 struct ReceivedForce: Encodable {
     var user_id: String
     var mobile_time: Int
@@ -404,7 +408,6 @@ public struct OnSpotRecognitionResult: Codable {
     public var spot_id: Int
     public var spot_distance: Double
     public var spot_range: [Int]
-//    public var spot_direction_list: [Int]
     public var spot_direction_down: [Int]
     public var spot_direction_up: [Int]
 
@@ -416,7 +419,6 @@ public struct OnSpotRecognitionResult: Codable {
         self.spot_id = 0
         self.spot_distance = 0
         self.spot_range = []
-//        self.spot_direction_list = []
         self.spot_direction_down = []
         self.spot_direction_up = []
     }
@@ -503,19 +505,19 @@ public struct JupiterGeoResult: Codable {
 }
 
 // Bias
-public struct JupiterBiasGet: Encodable {
+public struct JupiterParamGet: Encodable {
     var device_model: String
     var os_version: Int
     var sector_id: Int
 }
 
-public struct JupiterDeviceBiasGet: Encodable {
+public struct JupiterDeviceParamGet: Encodable {
     var device_model: String
     var sector_id: Int
 }
 
 
-public struct JupiterBiasResult: Codable {
+public struct JupiterParamResult: Codable {
     public var rss_compensations: [rss_compensation]
     
     public init() {
@@ -527,11 +529,13 @@ public struct rss_compensation: Codable {
     public var os_version: Int
     public var rss_compensation: Int
     public var scale_factor: Double
+    public var normalization_scale: Double
     
     public init() {
         self.os_version = 0
         self.rss_compensation = 0
         self.scale_factor = 1.0
+        self.normalization_scale = 1.0
     }
 }
 
@@ -540,6 +544,13 @@ public struct JupiterBiasPost: Encodable {
     var os_version: Int
     var sector_id: Int
     var rss_compensation: Int
+}
+
+public struct JupiterParamPost: Encodable {
+    var device_model: String
+    var os_version: Int
+    var sector_id: Int
+    var normalization_scale: Double
 }
 
 // Traj
