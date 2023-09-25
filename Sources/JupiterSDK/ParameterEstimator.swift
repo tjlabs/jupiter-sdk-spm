@@ -30,7 +30,6 @@ public class ParameterEstimator {
                 }
             }
         }
-//        print(getLocalTimeString() + " , Ward : (Min) = \(self.wardMinRssi)")
     }
     
     public func refreshWardMaxRssi(bleData: [String: Double]) {
@@ -42,7 +41,6 @@ public class ParameterEstimator {
                 self.wardMaxRssi = newArray
             }
         }
-//        print(getLocalTimeString() + " , Ward : (Max) = \(self.wardMaxRssi)")
     }
     
     public func calNormalizationScale(standardMin: Double, standardMax: Double) -> Double {
@@ -75,9 +73,9 @@ public class ParameterEstimator {
         } else {
             smoothedScale = movingAverage(preMvalue: self.preSmoothedNormalizationScale, curValue: scale, windowSize: self.scaleQueue.count)
         }
-        preSmoothedNormalizationScale = smoothedScale
-        
+        self.preSmoothedNormalizationScale = smoothedScale
 //        print(getLocalTimeString() + " , (Normalization) : smoothedScale = \(smoothedScale)")
+        
         return smoothedScale
     }
     
@@ -184,19 +182,17 @@ public class ParameterEstimator {
         }
     }
 
-    public func loadRssiBias(sector_id: Int) -> (Int, [Int], Bool, Bool) {
+    public func loadRssiBias(sector_id: Int) -> (Int, [Int], Bool) {
         var bias: Int = 2
         var biasArray: [Int] = []
         var isConverged: Bool = false
-        var isOldBias: Bool = false
         
         let currentTime = getCurrentTimeInMilliseconds()
         let keyBiasTime: String = "JupiterRssiBiasTime_\(sector_id)"
         if let biasTime: Int = UserDefaults.standard.object(forKey: keyBiasTime) as? Int {
             if (currentTime - biasTime) > 1000*3600*24*15  {
-                isOldBias = true
                 print(getLocalTimeString() + " , (Jupiter) Cannot believe old bias (\(currentTime - biasTime))")
-                return (bias, biasArray, isConverged, isOldBias)
+                return (bias, biasArray, isConverged)
             }
         }
         
@@ -215,7 +211,7 @@ public class ParameterEstimator {
             biasArray = loadedRssiBiasArray
         }
         
-        return (bias, biasArray, isConverged, isOldBias)
+        return (bias, biasArray, isConverged)
     }
 
     public func makeRssiBiasArray(bias: Int) -> [Int] {

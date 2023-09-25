@@ -600,7 +600,7 @@ public class NetworkManager {
         }
     }
     
-    func postFLT(url: String, input: FineLocationTracking, completion: @escaping (Int, String,  Int) -> Void) {
+    func postFLT(url: String, input: FineLocationTracking, completion: @escaping (Int, String, Int) -> Void) {
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
@@ -1149,7 +1149,7 @@ public class NetworkManager {
     }
     
     
-    func postJupiterBias(url: String, input: JupiterBiasPost, completion: @escaping (Int, String) -> Void){
+    func postJupiterParam(url: String, input: JupiterParamPost, completion: @escaping (Int, String) -> Void){
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
 
@@ -1163,8 +1163,8 @@ public class NetworkManager {
             // [http 요청 수행 실시]
 //            print("")
 //            print("====================================")
-//            print("POST Bias URL :: ", url)
-//            print("POST Bias 데이터 :: ", input)
+//            print("POST Param URL :: ", url)
+//            print("POST Param 데이터 :: ", input)
 //            print("====================================")
 //            print("")
             
@@ -1198,7 +1198,7 @@ public class NetworkManager {
                 DispatchQueue.main.async {
 //                    print("")
 //                    print("====================================")
-//                    print("RESPONSE Bias 데이터 :: ", resultCode)
+//                    print("RESPONSE Param 데이터 :: ", resultCode)
 //                    print("====================================")
 //                    print("")
                     completion(resultCode, "(Jupiter) Success Send Bias")

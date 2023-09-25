@@ -90,6 +90,19 @@ public func compensateHeading(heading: Double) -> Double {
     return headingToReturn
 }
 
+public func checkIsSimilarXyh(input: [Double]) -> Bool {
+    var dh = input[2]
+    if (dh >= 270) {
+        dh = 360 - dh
+    }
+    
+    if (dh < 20) {
+        return true
+    } else {
+        return false
+    }
+}
+
 public func checkDiagonal(userTrajectory: [TrajectoryInfo], DIAGONAL_CONDITION: Double) -> [TrajectoryInfo] {
     var accumulatedDiagonal = 0.0
     
@@ -269,6 +282,63 @@ public func getSearchCoordinates(areaMinMax: [Double], interval: Double) -> [[Do
         }
     
     return coordinates
+}
+
+public func convertToValidSearchRange(inputRange: [Int], pathPointMinMax: [Double]) -> [Int] {
+    var searchRange = inputRange
+    
+    let minMax: [Int] = pathPointMinMax.map { Int($0) }
+    if (pathPointMinMax.isEmpty) {
+        return searchRange
+    }
+    if (pathPointMinMax[0] == 0 && pathPointMinMax[1] == 0 && pathPointMinMax[2] == 0 && pathPointMinMax[3] == 0) {
+        return searchRange
+    }
+    
+    // Check isValid
+    if (inputRange[0] < minMax[0]) {
+        let diffX = minMax[0] - inputRange[0]
+        searchRange[0] = minMax[0]
+        
+        searchRange[2] = inputRange[2] + Int(Double(diffX)*0.5)
+        if (searchRange[2] > minMax[2]) {
+            searchRange[2] = minMax[2]
+        }
+    }
+    
+    if (inputRange[1] < minMax[1]) {
+        let diffY = minMax[1] - inputRange[1]
+        searchRange[1] = minMax[1]
+        
+        searchRange[3] = inputRange[3] + Int(Double(diffY)*0.5)
+        if (searchRange[3] > minMax[3]) {
+            searchRange[3] = minMax[3]
+        }
+    }
+    
+    if (inputRange[2] > minMax[2]) {
+        let diffX = inputRange[2] - minMax[2]
+        searchRange[2] = minMax[2]
+        
+        searchRange[0] = inputRange[0] - Int(Double(diffX)*0.5)
+        if (searchRange[0] < minMax[0]) {
+            searchRange[0] = minMax[0]
+        }
+    }
+    
+    if (inputRange[3] > minMax[3]) {
+        let diffY = inputRange[3] - minMax[3]
+        searchRange[3] = minMax[3]
+        
+        searchRange[1] = inputRange[1] - Int(Double(diffY)*0.5)
+        if (searchRange[1] < minMax[1]) {
+            searchRange[1] = minMax[1]
+        }
+    }
+    
+    print("Search Range : input = \(inputRange) , minMax = \(pathPointMinMax) , result = \(searchRange)")
+    
+    return searchRange
 }
 
 public func extractSectionWithLeastChange(inputArray: [Double]) -> [Double] {

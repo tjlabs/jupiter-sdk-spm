@@ -242,6 +242,9 @@ public struct BuildingDetectionResult: Codable {
 struct CoarseLevelDetection: Encodable {
     var user_id: String
     var mobile_time: Int
+    var normalization_scale: Double
+    var device_min_rss: Int
+    var standard_min_rss: Int
 }
 
 public struct CoarseLevelDetectionResult: Codable {
@@ -286,6 +289,8 @@ struct CoarseLocationEstimation: Encodable {
     var mobile_time: Int
     var sector_id: Int
     var search_direction_list: [Int]
+    var normalization_scale: Double
+    var device_min_rss: Int
 }
 
 public struct CoarseLocationEstimationResult: Codable {
@@ -318,11 +323,11 @@ struct FineLocationTracking: Encodable {
     var sector_id: Int
     var building_name: String
     var level_name_list: [String]
-    var spot_id: Int
     var phase: Int
     var search_range: [Int]
     var search_direction_list: [Int]
-    var rss_compensation_list: [Int]
+    var normalization_scale: Double
+    var device_min_rss: Int
     var sc_compensation_list: [Double]
     var tail_index: Int
 }
@@ -338,7 +343,6 @@ public struct FineLocationTrackingFromServer: Codable {
     public var phase: Int
     public var calculated_time: Double
     public var index: Int
-    public var rss_compensation: Int
     public var sc_compensation: Double
     public var search_direction: Int
     
@@ -353,7 +357,6 @@ public struct FineLocationTrackingFromServer: Codable {
         self.phase = 0
         self.calculated_time = 0
         self.index = 0
-        self.rss_compensation = 0
         self.sc_compensation = 0
         self.search_direction = 0
     }
@@ -397,7 +400,9 @@ public struct FineLocationTrackingResult: Codable {
 struct OnSpotRecognition: Encodable {
     var user_id: String
     var mobile_time: Int
-    var rss_compensation: Int
+    var normalization_scale: Double
+    var device_min_rss: Int
+    var standard_min_rss: Int
 }
 
 public struct OnSpotRecognitionResult: Codable {
@@ -596,7 +601,8 @@ public struct MobileResult: Encodable {
     public var index: Int
     public var velocity: Double
     public var ble_only_position: Bool
-    public var rss_compensation: Int
+    public var normalization_scale: Double
+    public var device_min_rss: Int
     public var sc_compensation: Double
     public var is_indoor: Bool
 }
