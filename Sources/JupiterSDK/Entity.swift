@@ -159,6 +159,13 @@ public struct TrajectoryInfo {
     public var userTuHeading: Double = 0
 }
 
+public struct MatchedTraj {
+    public var isSuccess: Bool = false
+    public var xyd: [Double] = []
+    public var minTrajectory: [[Double]] = [[]]
+    public var minTrajectoryOriginal: [[Double]] = [[]]
+}
+
 public struct ServiceResult {
     public var isIndexChanged: Bool = false
     
@@ -183,6 +190,7 @@ public struct ServiceResult {
     public var searchType: Int = 0
     
     public var trajectoryPm: [[Double]] = [[0, 0]]
+    public var trajectoryOg: [[Double]] = [[0, 0]]
 }
 
 // ------------------------------------------------- //

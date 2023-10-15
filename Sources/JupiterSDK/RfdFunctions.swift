@@ -3,29 +3,37 @@ import Foundation
 let WEAK_THRESHOLD: Double = -92
 let STRONG_THRESHOLD: Double = -80
 
-public func trimBleData(bleInput: [String: [[Double]]]?, nowTime: Double, validTime: Double) -> [String: [[Double]]] {
+public func trimBleData(bleInput: [String: [[Double]]]?, nowTime: Double, validTime: Double) -> Result<[String: [[Double]]], Error> {
     guard let bleInput = bleInput else {
-        return [:]
-    }
-    
-    var trimmedData = [String: [[Double]]]()
-    
-    for (bleID, bleData) in bleInput {
-        let newValue = bleData.filter { data in
-            let rssi = data[0]
-            let time = data[1]
-            
-            return (nowTime - time <= validTime) && (rssi >= -100)
+            return .failure(TrimBleDataError.invalidInput)
         }
         
-        if !newValue.isEmpty {
-            trimmedData[bleID] = newValue
+        var trimmedData = [String: [[Double]]]()
+        
+        for (bleID, bleData) in bleInput {
+            let newValue = bleData.filter { data in
+                let rssi = data[0]
+                let time = data[1]
+                
+                return (nowTime - time <= validTime) && (rssi >= -100)
+            }
+            
+            if !newValue.isEmpty {
+                trimmedData[bleID] = newValue
+            }
         }
-    }
-    
-    return trimmedData
+        
+        if trimmedData.isEmpty {
+            return .failure(TrimBleDataError.noValidData)
+        } else {
+            return .success(trimmedData)
+        }
 }
 
+enum TrimBleDataError: Error {
+    case invalidInput
+    case noValidData
+}
 
 public func avgBleData(bleDictionary: [String: [[Double]]]) -> [String: Double] {
     let digit: Double = pow(10, 2)
@@ -52,6 +60,20 @@ public func avgBleData(bleDictionary: [String: [[Double]]]) -> [String: Double] 
         }
     }
     return ble
+}
+
+public func checkBleChannelNum(bleDict: [String: Double]) -> Int {
+    var numChannels: Int = 0
+    
+    for key in bleDict.keys {
+        let bleRssi: Double = bleDict[key] ?? -100.0
+        
+        if (bleRssi > -95.0) {
+            numChannels += 1
+        }
+    }
+    
+    return numChannels
 }
 
 public func checkSufficientRfd(userTrajectory: [TrajectoryInfo]) -> Bool {
