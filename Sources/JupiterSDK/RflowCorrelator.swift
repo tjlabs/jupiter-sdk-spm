@@ -2,19 +2,19 @@ import Foundation
 
 
 public class RflowCorrelator {
+    
     let D = 10*2 // 10s
     let T = 10*2 // 10s
     
     var rfdBufferLength = 40
     var rfdBuffer = [[String: Double]]()
     
-    let D_V = 15*2
-    let T_V = 3*2
     
-    var rfdVelocityBufferLength = 36
+    let D_V = 5*2
+    let T_V = 5*2
+    
+    var rfdVelocityBufferLength = 20
     var rfdVelocityBuffer = [[String: Double]]()
-    var rflowQueue = [Double]()
-    var preSmoothedRflowForVelocity: Double = 0
     
     init() {
         self.rfdBufferLength = (self.D + self.T)
@@ -99,9 +99,8 @@ public class RflowCorrelator {
         return isSufficient
     }
     
-    public func getRflowForVelocityScale() -> Double {
+    public func getRflowForVelocity() -> Double {
         var result: Double = 0
-        
         
         if (self.rfdVelocityBuffer.count >= self.rfdVelocityBufferLength) {
             let preRfdBuffer = sliceDictionaryArray(self.rfdVelocityBuffer, startIndex: self.rfdVelocityBufferLength-T_V-D_V, endIndex: self.rfdVelocityBufferLength-T_V-1)
@@ -131,8 +130,6 @@ public class RflowCorrelator {
                     result = calcScc(value: avgValue)
                 }
             }
-//            self.updateRflowQueue(data: result)
-//            result = self.smoothRflowForVelocity(rflow: result)
         }
         
         return result
@@ -155,28 +152,5 @@ public class RflowCorrelator {
         }
         
         return slicedArray
-    }
-    
-    func movingAverage(preMvalue: Double, curValue: Double, windowSize: Int) -> Double {
-        let windowSizeDouble: Double = Double(windowSize)
-        return preMvalue*((windowSizeDouble - 1)/windowSizeDouble) + (curValue/windowSizeDouble)
-    }
-    
-    func updateRflowQueue(data: Double) {
-        if (self.rflowQueue.count >= 6) {
-            self.rflowQueue.remove(at: 0)
-        }
-        self.rflowQueue.append(data)
-    }
-    
-    func smoothRflowForVelocity(rflow: Double) -> Double {
-        var smoothedRflow: Double = 1.0
-        if (self.rflowQueue.count == 1) {
-            smoothedRflow = rflow
-        } else {
-            smoothedRflow = movingAverage(preMvalue: self.preSmoothedRflowForVelocity, curValue: rflow, windowSize: self.rflowQueue.count)
-        }
-        preSmoothedRflowForVelocity = smoothedRflow
-        return smoothedRflow
     }
 }

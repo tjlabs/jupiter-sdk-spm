@@ -45,10 +45,8 @@ public class DRDistanceEstimator: NSObject {
     
     let RF_SC_THRESHOLD_DR: Double = 0.67
     
-    public var rflow: Double = 0
-    public var rflowForVelocity: Double = 0
+    public var rfScc: Double = 0
     public var isSufficientRfdBuffer: Bool = false
-    public var isSufficientRfdVelocityBuffer: Bool = false
     
     public func argmax(array: [Float]) -> Int {
         let output1 = array[0]
@@ -163,6 +161,7 @@ public class DRDistanceEstimator: NSObject {
             velocitySmoothing = CF.exponentialMovingAverage(preEMA: preVelocitySmoothing, curValue: velocity, windowSize: Int(SAMPLE_HZ))
         }
         preVelocitySmoothing = velocitySmoothing
+        
 //        print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator : velocitySmoothing = \(velocitySmoothing)")
         var turnScale = exp(-navGyroZSmoothing/1.6)
         if (turnScale > 0.87) {
@@ -176,33 +175,28 @@ public class DRDistanceEstimator: NSObject {
             velocityInput = VELOCITY_MAX
         }
         
-//        print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator : rflowForVelocity = \(self.rflowForVelocity)")
-        let rflowScale: Double = calRflowVelocityScale(rflowForVelocity: self.rflowForVelocity, isSufficientForVelocity: self.isSufficientRfdVelocityBuffer)
-//        print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator : rflowScale = \(rflowScale)")
+        
         var velocityInputScale = velocityInput*self.velocityScaleFactor*self.scVelocityScaleFactor
 //        print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator : velocityInput = \(velocityInput) , velocityScaleFactor = \(velocityScaleFactor) , scVelocityScaleFactor = \(scVelocityScaleFactor)")
 //        print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator : velocityInputScale = \(velocityInputScale)")
         if velocityInputScale < VELOCITY_MIN {
             velocityInputScale = 0
-            if (self.isSufficientRfdBuffer && self.rflow < 0.5) {
-                velocityInputScale = VELOCITY_MAX*rflowScale
-            }
         } else if velocityInputScale > VELOCITY_MAX {
             velocityInputScale = VELOCITY_MAX
         }
         
-        // RFlow Stop Detection
-        if (self.isSufficientRfdBuffer && self.rflow >= RF_SC_THRESHOLD_DR) {
+        
+        if (self.isSufficientRfdBuffer && self.rfScc >= RF_SC_THRESHOLD_DR) {
 //            print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator (RF SCC) : velocityInputScale = \(velocityInputScale) // rfSCC = \(self.rfScc)")
             velocityInputScale = 0
         }
         
-        var velocityMps = (velocityInputScale/3.6)*turnScale
-        if (velocityInputScale >= 15 && self.rflowForVelocity > 0.65 && self.isSufficientRfdVelocityBuffer) {
-//            print(getLocalTimeString() + " , (Jupiter) I'm fast : velocityInputScale = \(velocityInputScale) , rflowForVelocity = \(self.rflowForVelocity)")
-//            velocityMps = velocityMps*rflowScale
+        if (velocityInputScale < VELOCITY_MIN && self.isSufficientRfdBuffer && self.rfScc < 0.5) {
+            velocityInputScale = 4
         }
         
+        
+        let velocityMps = (velocityInputScale/3.6)*turnScale
 //        print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator : velocityMps = \(velocityMps)")
 //        print(getLocalTimeString() + " , (Jupiter) DRDistanceEstimator : -----------------------------")
         
@@ -280,24 +274,8 @@ public class DRDistanceEstimator: NSObject {
         velocityQueue.append(data)
     }
     
-    public func setRflow(rflow: Double, rflowForVelocity: Double, isSufficient: Bool, isSufficientForVelocity: Bool) {
-        self.rflow = rflow
-        self.rflowForVelocity = rflowForVelocity
+    public func setRflow(scc: Double, isSufficient: Bool) {
+        self.rfScc = scc
         self.isSufficientRfdBuffer = isSufficient
-        self.isSufficientRfdVelocityBuffer = isSufficientForVelocity
-    }
-    
-    public func calRflowVelocityScale(rflowForVelocity: Double, isSufficientForVelocity: Bool) -> Double {
-        var scale: Double = 1.0
-        
-        if (isSufficientForVelocity) {
-            scale = (-1/(1+exp(10*(-rflowForVelocity+0.66)))) + 1
-            
-            if (scale < 0.5) {
-                scale = 0.5
-            }
-        }
-        
-        return scale
     }
 }
