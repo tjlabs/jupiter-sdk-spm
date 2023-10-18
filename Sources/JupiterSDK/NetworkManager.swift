@@ -600,11 +600,12 @@ public class NetworkManager {
         }
     }
     
-    func postFLT(url: String, input: FineLocationTracking, isSufficientRfd: Bool, completion: @escaping (Int, String,  Bool) -> Void) {
+    func postFLT(url: String, input: FineLocationTracking, completion: @escaping (Int, String, Int) -> Void) {
         // [http 비동기 방식을 사용해서 http 요청 수행 실시]
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
-
+        let inputPhase: Int = input.phase
+        
         requestURL.httpMethod = "POST"
         let encodingData = JSONConverter.encodeJson(param: input)
         if (encodingData != nil) {
@@ -630,7 +631,7 @@ public class NetworkManager {
                 guard error == nil else {
                     // [콜백 반환]
                     DispatchQueue.main.async {
-                        completion(500, error?.localizedDescription ?? "Fail", false)
+                        completion(500, error?.localizedDescription ?? "Fail", inputPhase)
                     }
                     return
                 }
@@ -641,7 +642,7 @@ public class NetworkManager {
                 else {
                     // [콜백 반환]
                     DispatchQueue.main.async {
-                        completion(500, (response as? HTTPURLResponse)?.description ?? "Fail", false)
+                        completion(500, (response as? HTTPURLResponse)?.description ?? "Fail", inputPhase)
                     }
                     return
                 }
@@ -649,7 +650,7 @@ public class NetworkManager {
                 // [response 데이터 획득]
                 let resultCode = (response as? HTTPURLResponse)?.statusCode ?? 500 // [상태 코드]
                 guard let resultLen = data else {
-                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail", false)
+                    completion(500, (response as? HTTPURLResponse)?.description ?? "Fail", inputPhase)
                     return
                 }
                 let resultData = String(data: resultLen, encoding: .utf8) ?? "" // [데이터 확인]
@@ -661,14 +662,14 @@ public class NetworkManager {
 //                    print("RESPONSE FLT 데이터 :: ", resultData)
 //                    print("====================================")
 //                    print("")
-                    completion(resultCode, resultData, isSufficientRfd)
+                    completion(resultCode, resultData, inputPhase)
                 }
             })
 
             // [network 통신 실행]
             dataTask.resume()
         } else {
-            completion(500, "Fail to encode", false)
+            completion(500, "Fail to encode", inputPhase)
         }
     }
     
@@ -1016,7 +1017,7 @@ public class NetworkManager {
         }
     }
     
-    func getJupiterBias(url: String, input: JupiterBiasGet, completion: @escaping (Int, String) -> Void) {
+    func getJupiterParam(url: String, input: JupiterParamGet, completion: @escaping (Int, String) -> Void) {
         var urlComponents = URLComponents(string: url)
         urlComponents?.queryItems = [URLQueryItem(name: "device_model", value: input.device_model),
                                      URLQueryItem(name: "os_version", value: String(input.os_version)),
@@ -1082,7 +1083,7 @@ public class NetworkManager {
         dataTask.resume()
     }
     
-    func getJupiterDeviceBias(url: String, input: JupiterDeviceBiasGet, completion: @escaping (Int, String) -> Void) {
+    func getJupiterDeviceParam(url: String, input: JupiterDeviceParamGet, completion: @escaping (Int, String) -> Void) {
         var urlComponents = URLComponents(string: url)
         urlComponents?.queryItems = [URLQueryItem(name: "device_model", value: input.device_model),
                                      URLQueryItem(name: "sector_id", value: String(input.sector_id))]
@@ -1147,7 +1148,8 @@ public class NetworkManager {
         dataTask.resume()
     }
     
-    func postJupiterBias(url: String, input: JupiterBiasPost, completion: @escaping (Int, String) -> Void){
+    
+    func postJupiterParam(url: String, input: JupiterParamPost, completion: @escaping (Int, String) -> Void){
         let urlComponents = URLComponents(string: url)
         var requestURL = URLRequest(url: (urlComponents?.url)!)
 
@@ -1161,8 +1163,8 @@ public class NetworkManager {
             // [http 요청 수행 실시]
 //            print("")
 //            print("====================================")
-//            print("POST Bias URL :: ", url)
-//            print("POST Bias 데이터 :: ", input)
+//            print("POST Param URL :: ", url)
+//            print("POST Param 데이터 :: ", input)
 //            print("====================================")
 //            print("")
             
@@ -1196,7 +1198,7 @@ public class NetworkManager {
                 DispatchQueue.main.async {
 //                    print("")
 //                    print("====================================")
-//                    print("RESPONSE Bias 데이터 :: ", resultCode)
+//                    print("RESPONSE Param 데이터 :: ", resultCode)
 //                    print("====================================")
 //                    print("")
                     completion(resultCode, "(Jupiter) Success Send Bias")

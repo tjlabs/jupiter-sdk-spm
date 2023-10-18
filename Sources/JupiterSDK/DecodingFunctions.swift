@@ -36,32 +36,6 @@ public func jsonForTracking(json: String) -> FineLocationTrackingResult {
     return result
 }
 
-//public func jsonToCardList(json: String) -> CardList {
-//    let result = CardList(sectors: [])
-//    let decoder = JSONDecoder()
-//
-//    let jsonString = json
-//
-//    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(CardList.self, from: data) {
-//        return decoded
-//    }
-//
-//    return result
-//}
-
-//public func jsonToSectorInfoResult(json: String) -> SectorInfoResult {
-//    let result = SectorInfoResult(building_level: [[]], entrance_wards: [], entrance_scales: [])
-//    let decoder = JSONDecoder()
-//
-//    let jsonString = json
-//
-//    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(SectorInfoResult.self, from: data) {
-//        return decoded
-//    }
-//
-//    return result
-//}
-
 public func decodeMock(json: String) -> JupiterMockResult {
     let result = JupiterMockResult.init()
     let decoder = JSONDecoder()
@@ -123,12 +97,12 @@ public func decodeTraj(json: String) -> JupiterTrajResult {
     return result
 }
 
-public func decodeRC(json: String) -> JupiterBiasResult {
-    let result = JupiterBiasResult.init()
+public func decodeParam(json: String) -> JupiterParamResult {
+    let result = JupiterParamResult.init()
     let decoder = JSONDecoder()
     let jsonString = json
 
-    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterBiasResult.self, from: data) {
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(JupiterParamResult.self, from: data) {
         return decoded
     }
 

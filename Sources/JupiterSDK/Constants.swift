@@ -12,6 +12,7 @@ var INFO_URL = "https://where-run-user" + REGION + "/info"
 var GEO_URL = "https://where-run-param" + REGION + "/geo"
 var RCR_URL = "https://where-run-param" + REGION + "/rcr"
 var RC_URL = "https://where-run-param" + REGION + "/rc"
+var NS_URL = "https://where-run-param" + REGION + "/ns"
 var TRAJ_URL = "https://where-run-param" + REGION + "/traj"
 var DEBUG_URL = "https://where-run-param" + REGION + "/md"
 
@@ -84,14 +85,14 @@ let BIAS_RANGE_MIN: Int = -3
 
 let STOP_THRESHOLD: Double = 2
 let SLEEP_THRESHOLD: Double = 600
-let SLEEP_THRESHOLD_RF: Double = 6
+let SLEEP_THRESHOLD_RF: Double = 10
 let BLE_OFF_THRESHOLD: Double = 4
 
 let HEADING_RANGE: Double = 46
 let HEADING_RANGE_TU: Double = 30
 
 let UVD_BUFFER_SIZE = 10
-let HEADING_BUFFER_SIZE: Int = 10
+let HEADING_BUFFER_SIZE: Int = 5
 
 let MR_INPUT_NUM = 20
 
@@ -127,6 +128,7 @@ public func setBaseURL(url: String) {
     GEO_URL = "https://where-run-param" + REGION + "/geo"
     RCR_URL = "https://where-run-param" + REGION + "/rcr"
     RC_URL = "https://where-run-param" + REGION + "/rc"
+    NS_URL = "https://where-run-param" + REGION + "/ns"
     TRAJ_URL = "https://where-run-param" + REGION + "/traj"
     DEBUG_URL = "https://where-run-param" + REGION + "/md"
     

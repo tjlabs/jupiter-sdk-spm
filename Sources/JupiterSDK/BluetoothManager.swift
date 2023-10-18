@@ -56,7 +56,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     
     var bleDictionary = [String: [[Double]]]()
     var bleDiscoveredTime: Double = 0
-    var rssiScale: Double = 1.0
+    public var bleLastScannedTime: Double = 0
     
     public var BLE_VALID_TIME: Double = 1000
     
@@ -105,9 +105,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         
         discoveredPeripheral = peripheral
-        
+        self.bleLastScannedTime = getCurrentTimeInMillisecondsDouble()
         if let bleName = discoveredPeripheral.name {
-            
             if bleName.contains("TJ-") {
                 let deviceIDString = bleName.substring(from: 8, to: 15)
                 
@@ -128,7 +127,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     }
                     
                     var bleScaned = self.bleDictionary
-                    let rssiValue = RSSI.doubleValue*self.rssiScale
+                    let rssiValue = RSSI.doubleValue
+                    
                     if (bleScaned.contains(where: condition)) {
                         let data = bleScaned.filter(condition)
                         var value:[[Double]] = data[bleName]!
@@ -140,6 +140,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     } else {
                         bleScaned.updateValue([[rssiValue, bleTime]], forKey: bleName)
                     }
+//                    let bleTrimed = trimBleData(bleData: bleScaned, nowTime: bleTime, validTime: validTime)
+//                    self.bleDictionary = bleTrimed
                     let trimmedResult = trimBleData(bleInput: bleScaned, nowTime: bleTime, validTime: validTime)
                     switch trimmedResult {
                     case .success(let trimmedData):
@@ -147,6 +149,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     case .failure(let error):
                         print(getLocalTimeString() + " , (Jupiter) Error : BleManager \(error)")
                     }
+                    
                     
                     NotificationCenter.default.post(name: .scanInfo, object: nil, userInfo: userInfo)
                 }
@@ -227,9 +230,28 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         }
     }
     
-    func setRssiScale(scale: Double) {
-        self.rssiScale = scale
-    }
+//    func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
+//        var trimmedData = [String: [[Double]]]()
+//
+//        for (bleID, bleData) in bleData {
+//            var newValue = [[Double]]()
+//            for data in bleData {
+//                let rssi = data[0]
+//                let time = data[1]
+//
+//                if ((nowTime - time <= validTime) && (rssi >= -100)) {
+//                    let dataToAdd: [Double] = [rssi, time]
+//                    newValue.append(dataToAdd)
+//                }
+//            }
+//
+//            if (newValue.count > 0) {
+//                trimmedData[bleID] = newValue
+//            }
+//        }
+//
+//        return trimmedData
+//    }
     
     func trimBleData(bleInput: Dictionary<String, [[Double]]>?, nowTime: Double, validTime: Double) -> Result<Dictionary<String, [[Double]]>, Error> {
         guard let bleInput = bleInput else {
@@ -256,6 +278,11 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             } else {
                 return .success(trimmedData)
             }
+    }
+
+    enum TrimBleDataError: Error {
+        case invalidInput
+        case noValidData
     }
     
     func isConnected() -> Bool {
