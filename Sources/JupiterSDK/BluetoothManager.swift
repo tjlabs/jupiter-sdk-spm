@@ -140,8 +140,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     } else {
                         bleScaned.updateValue([[rssiValue, bleTime]], forKey: bleName)
                     }
-//                    let bleTrimed = trimBleData(bleData: bleScaned, nowTime: bleTime, validTime: validTime)
-//                    self.bleDictionary = bleTrimed
                     let trimmedResult = trimBleData(bleInput: bleScaned, nowTime: bleTime, validTime: validTime)
                     switch trimmedResult {
                     case .success(let trimmedData):
@@ -229,29 +227,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             self.BLE_VALID_TIME = 1500
         }
     }
-    
-//    func trimBleData(bleData: Dictionary<String, [[Double]]>, nowTime: Double, validTime: Double) -> Dictionary<String, [[Double]]> {
-//        var trimmedData = [String: [[Double]]]()
-//
-//        for (bleID, bleData) in bleData {
-//            var newValue = [[Double]]()
-//            for data in bleData {
-//                let rssi = data[0]
-//                let time = data[1]
-//
-//                if ((nowTime - time <= validTime) && (rssi >= -100)) {
-//                    let dataToAdd: [Double] = [rssi, time]
-//                    newValue.append(dataToAdd)
-//                }
-//            }
-//
-//            if (newValue.count > 0) {
-//                trimmedData[bleID] = newValue
-//            }
-//        }
-//
-//        return trimmedData
-//    }
     
     func trimBleData(bleInput: Dictionary<String, [[Double]]>?, nowTime: Double, validTime: Double) -> Result<Dictionary<String, [[Double]]>, Error> {
         guard let bleInput = bleInput else {

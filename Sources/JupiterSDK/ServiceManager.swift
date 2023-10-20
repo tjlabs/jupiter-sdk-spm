@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.2.3"
+    public static let sdkVersion: String = "3.2.4"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -296,7 +296,6 @@ public class ServiceManager: Observation {
     
     var isActiveService: Bool = true
     var isActiveRF: Bool = true
-    var isEmptyRF: Bool = false
     var isAnswered: Bool = false
     var isActiveKf: Bool = false
     var isStartKf: Bool = false
@@ -307,8 +306,8 @@ public class ServiceManager: Observation {
     
     var timeBleOff: Double = 0
     var timeActiveRF: Double = 0
+    var timeFailRF: Double = 0
     var timeActiveUV: Double = 0
-    var timeEmptyRF: Double = 0
     var timeRequest: Double = 0
     var timePhaseChange: Double = 0
     var timeSleepRF: Double = 0
@@ -696,6 +695,7 @@ public class ServiceManager: Observation {
                                                                                                 print(localTime + " , (Jupiter) Information : Need Estimation")
                                                                                                 let log: String = localTime + " , (Jupiter) Success : Service Initalization"
                                                                                                 message = log
+                                                                                                self.reporting(input: START_FLAG)
                                                                                                 completion(true, message)
                                                                                             } else {
                                                                                                 // Success Load without OS
@@ -719,6 +719,7 @@ public class ServiceManager: Observation {
                                                                                                     
                                                                                                     let log: String = localTime + " , (Jupiter) Success : Service Initalization"
                                                                                                     message = log
+                                                                                                    self.reporting(input: START_FLAG)
                                                                                                     completion(true, message)
                                                                                                 } else {
                                                                                                     displayOutput.bias = self.rssiBias
@@ -731,6 +732,7 @@ public class ServiceManager: Observation {
                                                                                                     print(localTime + " , (Jupiter) Information : Need Estimation")
                                                                                                     let log: String = localTime + " , (Jupiter) Success : Service Initalization"
                                                                                                     message = log
+                                                                                                    self.reporting(input: START_FLAG)
                                                                                                     completion(true, message)
                                                                                                 }
                                                                                             }
@@ -763,6 +765,7 @@ public class ServiceManager: Observation {
                                                                                     
                                                                                     let log: String = localTime + " , (Jupiter) Success : Service Initalization"
                                                                                     message = log
+                                                                                    self.reporting(input: START_FLAG)
                                                                                     completion(true, message)
                                                                                 }
                                                                             } else {
@@ -1091,6 +1094,7 @@ public class ServiceManager: Observation {
     
     private func initVariables() {
         self.timeForInit = 0
+        self.timeFailRF = 0
         self.lastScannedEntranceOuterWardTime = 0
         
         self.inputReceivedForce = [ReceivedForce(user_id: user_id, mobile_time: 0, ble: [:], pressure: 0)]
@@ -1614,8 +1618,6 @@ public class ServiceManager: Observation {
         let bleDictionary: [String: [[Double]]]? = bleManager.bleDictionary
         if let bleData = bleDictionary {
             if (!self.isRfdTimerRunningFinished) {
-                self.isRfdTimerRunningFinished = true
-                
                 let trimmedResult = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
                 switch trimmedResult {
                 case .success(let trimmedData):
@@ -1659,9 +1661,20 @@ public class ServiceManager: Observation {
                         }
                     }
                 case .failure(let error):
-                    print(getLocalTimeString() + " , (Jupiter) Error : \(error)")
+                    self.timeFailRF += RFD_INTERVAL
                     self.reporting(input: BLE_ERROR_FLAG)
+                    
+                    if (self.isIndoor && self.isGetFirstResponse) {
+                        if (!self.isBleOff) {
+                            let lastResult = self.resultToReturn
+                            let isFailTrimBle = self.determineIsOutdoor(lastResult: lastResult, currentTime: getCurrentTimeInMillisecondsDouble(), inFailCondition: true)
+                            if (isFailTrimBle) {
+                                self.bleAvg = [String: Double]()
+                            }
+                        }
+                    }
                 }
+                self.isRfdTimerRunningFinished = true
             }
             
 //            self.bleAvg = ["TJ-00CB-0000038C-0000":-76.0] // COEX B2 <-> B3
@@ -1698,10 +1711,8 @@ public class ServiceManager: Observation {
                 self.timeBleOff = 0
                 self.timeActiveRF = 0
                 self.timeSleepRF = 0
-                self.timeEmptyRF = 0
                 
                 self.isActiveRF = true
-                self.isEmptyRF = false
                 self.isBleOff = false
                 self.isActiveService = true
                 
@@ -1739,32 +1750,12 @@ public class ServiceManager: Observation {
                     if (self.isIndoor && self.isGetFirstResponse) {
                         if (!self.isBleOff) {
                             let lastResult = self.resultToReturn
-                            let isInEntranceMatchingArea = self.checkInEntranceMatchingArea(x: lastResult.x, y: lastResult.y, building: lastResult.building_name, level: lastResult.level_name)
-                            
-                            let diffEntranceWardTime = cTime - self.lastScannedEntranceOuterWardTime
-                            if (lastResult.building_name != "" && lastResult.level_name == "B0") {
+                            let isOutdoor = self.determineIsOutdoor(lastResult: lastResult, currentTime: cTime, inFailCondition: false)
+                            if (isOutdoor) {
                                 self.initVariables()
                                 self.currentLevel = "B0"
                                 self.isIndoor = false
                                 self.reporting(input: OUTDOOR_FLAG)
-                            } else if (isInEntranceMatchingArea.0) {
-                                self.initVariables()
-                                self.currentLevel = "B0"
-                                self.isIndoor = false
-                                self.reporting(input: OUTDOOR_FLAG)
-                            } else if (diffEntranceWardTime <= 30*1000) {
-                                self.initVariables()
-                                self.currentLevel = "B0"
-                                self.isIndoor = false
-                                self.reporting(input: OUTDOOR_FLAG)
-                            } else {
-                                // 3min
-                                if (self.timeActiveRF >= SLEEP_THRESHOLD_RF*6*3) {
-                                    self.initVariables()
-                                    self.currentLevel = "B0"
-                                    self.isIndoor = false
-                                    self.reporting(input: OUTDOOR_FLAG)
-                                }
                             }
                         }
                     }
@@ -4714,19 +4705,13 @@ public class ServiceManager: Observation {
         let currentTime = getCurrentTimeInMilliseconds()
         let bleDictionary: [String: [[Double]]]? = bleManager.bleDictionary
         if let bleData = bleDictionary {
-            let trimmedResult = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
-            switch trimmedResult {
-            case .success(let trimmedData):
-                let bleAvg = avgBleData(bleDictionary: trimmedData)
-                let bleRaw = latestBleData(bleDictionary: trimmedData)
-                
-                sensorManager.collectData.time = currentTime
-                sensorManager.collectData.bleRaw = bleRaw
-                sensorManager.collectData.bleAvg = bleAvg
-            case .failure(let error):
-                print(getLocalTimeString() + " , (Jupiter) Error : RFD \(error)")
-                self.reporting(input: BLE_ERROR_FLAG)
-            }
+            let trimmedResult = trimBleForCollect(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+            let bleAvg = avgBleData(bleDictionary: trimmedResult)
+            let bleRaw = latestBleData(bleDictionary: trimmedResult)
+            
+            sensorManager.collectData.time = currentTime
+            sensorManager.collectData.bleRaw = bleRaw
+            sensorManager.collectData.bleAvg = bleAvg
         } else {
             let log: String = localTime + " , (Jupiter) Warnings : Fail to get recent ble"
             print(log)
@@ -4990,154 +4975,32 @@ public class ServiceManager: Observation {
         }
     }
     
-//    public func pathMatching(building: String, level: String, x: Double, y: Double, heading: Double, tuXY: [Double], isPast: Bool, HEADING_RANGE: Double, isUseHeading: Bool, pathType: Int) -> (isSuccess: Bool, xyh: [Double]) {
-//        var isSuccess: Bool = false
-//        var xyh: [Double] = [x, y, heading]
-//        let levelCopy: String = removeLevelDirectionString(levelName: level)
-//        let key: String = "\(building)_\(levelCopy)"
-//        if (isPast) {
-//            isSuccess = true
-//            return (isSuccess, xyh)
-//        }
-//
-//        if (!(building.isEmpty) && !(level.isEmpty)) {
-//            guard let mainType: [Int] = self.PathType[key] else {
-//                return (isSuccess, xyh)
-//            }
-//            guard let mainRoad: [[Double]] = self.PathPoint[key] else {
-//                return (isSuccess, xyh)
-//            }
-//
-//            guard let mainMagScale: [Double] = self.PathMagScale[key] else {
-//                return (isSuccess, xyh)
-//            }
-//
-//            guard let mainHeading: [String] = self.PathHeading[key] else {
-//                return (isSuccess, xyh)
-//            }
-//
-//            let pathhMatchingArea = checkInEntranceMatchingArea(x: x, y: y, building: building, level: levelCopy)
-//
-//            // Heading 사용
-//            var idshArray = [[Double]]()
-//            var pathArray = [[Double]]()
-//            var failArray = [[Double]]()
-//            if (!mainRoad.isEmpty) {
-//                let roadX = mainRoad[0]
-//                let roadY = mainRoad[1]
-//
-//                var xMin = x - SQUARE_RANGE
-//                var xMax = x + SQUARE_RANGE
-//                var yMin = y - SQUARE_RANGE
-//                var yMax = y + SQUARE_RANGE
-//                if (pathhMatchingArea.0) {
-//                    xMin = pathhMatchingArea.1[0]
-//                    yMin = pathhMatchingArea.1[1]
-//                    xMax = pathhMatchingArea.1[2]
-//                    yMax = pathhMatchingArea.1[3]
-//                }
-//
-//                for i in 0..<roadX.count {
-//                    let xPath = roadX[i]
-//                    let yPath = roadY[i]
-//
-//                    let pathTypeLoaded = mainType[i]
-//                    if (pathType == 1) {
-//                        if (pathType != pathTypeLoaded) {
-//                            continue
-//                        }
-//                    }
-//                    // XY 범위 안에 있는 값 중에 검사
-//                    if (xPath >= xMin && xPath <= xMax) {
-//                        if (yPath >= yMin && yPath <= yMax) {
-//                            let index = Double(i)
-//                            let distance = sqrt(pow(x-xPath, 2) + pow(y-yPath, 2))
-//
-//                            let magScale = mainMagScale[i]
-//                            var idsh: [Double] = [index, distance, magScale, heading]
-//                            var path: [Double] = [xPath, yPath, 0, 0]
-//
-//                            let headingArray = mainHeading[i]
-//                            var isValidIdh: Bool = true
-//                            if (!headingArray.isEmpty) {
-//                                let headingData = headingArray.components(separatedBy: ",")
-//                                var diffHeading = [Double]()
-//                                for j in 0..<headingData.count {
-//                                    if(!headingData[j].isEmpty) {
-//                                        let mapHeading = Double(headingData[j])!
-//                                        if (heading > 270 && (mapHeading >= 0 && mapHeading < 90)) {
-//                                            diffHeading.append(abs(heading - (mapHeading+360)))
-//                                        } else if (mapHeading > 270 && (heading >= 0 && heading < 90)) {
-//                                            diffHeading.append(abs(mapHeading - (heading+360)))
-//                                        } else {
-//                                            diffHeading.append(abs(heading - mapHeading))
-//                                        }
-//                                    }
-//                                }
-//
-//                                if (!diffHeading.isEmpty) {
-//                                    let idxHeading = diffHeading.firstIndex(of: diffHeading.min()!)
-//                                    let minHeading = Double(headingData[idxHeading!])!
-//                                    idsh[3] = minHeading
-//                                    if (isUseHeading) {
-//                                        if (heading > 270 && (minHeading >= 0 && minHeading < 90)) {
-//                                            if (abs(heading-360) >= HEADING_RANGE) {
-//                                                isValidIdh = false
-//                                            }
-//                                        } else if (minHeading > 270 && (heading >= 0 && heading < 90)) {
-//                                            if (abs(minHeading-360) >= HEADING_RANGE) {
-//                                                isValidIdh = false
-//                                            }
-//                                        } else {
-//                                            if (abs(heading-minHeading) >= HEADING_RANGE) {
-//                                                isValidIdh = false
-//                                            }
-//                                        }
-//                                    }
-//                                    path[2] = minHeading
-//                                    path[3] = 1
-//                                }
-//                            }
-//                            if (isValidIdh) {
-//                                idshArray.append(idsh)
-//                                pathArray.append(path)
-//                            } else {
-//                                failArray.append(idsh)
-//                            }
-//                        }
-//                    }
-//                }
-//
-//                if (!idshArray.isEmpty) {
-//                    let sortedIdsh = idshArray.sorted(by: {$0[1] < $1[1] })
-//                    var index: Int = 0
-//                    var correctedHeading: Double = heading
-//                    var correctedScale = 1.0
-//
-//                    if (!sortedIdsh.isEmpty) {
-//                        let minData: [Double] = sortedIdsh[0]
-//                        index = Int(minData[0])
-//                        if (isUseHeading) {
-//                            correctedScale = minData[2]
-//                            correctedHeading = minData[3]
-//                        } else {
-//                            correctedHeading = heading
-//                        }
-//                    }
-//
-//                    isSuccess = true
-//
-//                    if (correctedScale < 0.7) {
-//                        correctedScale = 0.7
-//                    }
-//
-//                    unitDRGenerator.setVelocityScaleFactor(scaleFactor: correctedScale)
-//                    xyh = [roadX[index], roadY[index], correctedHeading]
-//                }
-//            }
-//        }
-//        return (isSuccess, xyh)
-//    }
+    private func determineIsOutdoor(lastResult: FineLocationTrackingResult, currentTime: Double, inFailCondition: Bool) -> Bool {
+        let isInEntranceMatchingArea = self.checkInEntranceMatchingArea(x: lastResult.x, y: lastResult.y, building: lastResult.building_name, level: lastResult.level_name)
+        
+        let diffEntranceWardTime = currentTime - self.lastScannedEntranceOuterWardTime
+        if (lastResult.building_name != "" && lastResult.level_name == "B0") {
+            return true
+        } else if (isInEntranceMatchingArea.0) {
+            return true
+        } else if (diffEntranceWardTime <= 30*1000) {
+            return true
+        } else {
+            // 3min
+            if (inFailCondition) {
+                if (self.timeFailRF >= SLEEP_THRESHOLD_RF) {
+                    self.timeActiveRF = self.timeFailRF
+                    self.timeFailRF = 0
+                    return true
+                }
+            } else {
+                if (self.timeActiveRF >= SLEEP_THRESHOLD_RF*6*3) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
     
     public func pathMatching(building: String, level: String, x: Double, y: Double, heading: Double, tuXY: [Double], isPast: Bool, HEADING_RANGE: Double, isUseHeading: Bool, pathType: Int) -> (isSuccess: Bool, xyh: [Double]) {
         var isSuccess: Bool = false

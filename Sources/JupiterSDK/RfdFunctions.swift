@@ -3,6 +3,11 @@ import Foundation
 let WEAK_THRESHOLD: Double = -92
 let STRONG_THRESHOLD: Double = -80
 
+enum TrimBleDataError: Error {
+    case invalidInput
+    case noValidData
+}
+
 public func trimBleData(bleInput: [String: [[Double]]]?, nowTime: Double, validTime: Double) -> Result<[String: [[Double]]], Error> {
     guard let bleInput = bleInput else {
             return .failure(TrimBleDataError.invalidInput)
@@ -30,9 +35,27 @@ public func trimBleData(bleInput: [String: [[Double]]]?, nowTime: Double, validT
         }
 }
 
-enum TrimBleDataError: Error {
-    case invalidInput
-    case noValidData
+public func trimBleForCollect(bleData:[String: [[Double]]], nowTime: Double, validTime: Double) -> [String: [[Double]]] {
+    var trimmedData = [String: [[Double]]]()
+
+    for (bleID, bleData) in bleData {
+        var newValue = [[Double]]()
+        for data in bleData {
+            let rssi = data[0]
+            let time = data[1]
+
+            if ((nowTime - time <= validTime) && (rssi >= -100)) {
+                let dataToAdd: [Double] = [rssi, time]
+                newValue.append(dataToAdd)
+            }
+        }
+
+        if (newValue.count > 0) {
+            trimmedData[bleID] = newValue
+        }
+    }
+
+    return trimmedData
 }
 
 public func avgBleData(bleDictionary: [String: [[Double]]]) -> [String: Double] {
