@@ -56,7 +56,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     
     var bleDictionary = [String: [[Double]]]()
     var bleDiscoveredTime: Double = 0
-    var rssiScale: Double = 1.0
+    public var bleLastScannedTime: Double = 0
     
     public var BLE_VALID_TIME: Double = 1000
     
@@ -105,9 +105,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         
         discoveredPeripheral = peripheral
-        
+        self.bleLastScannedTime = getCurrentTimeInMillisecondsDouble()
         if let bleName = discoveredPeripheral.name {
-            
             if bleName.contains("TJ-") {
                 let deviceIDString = bleName.substring(from: 8, to: 15)
                 
@@ -128,7 +127,8 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     }
                     
                     var bleScaned = self.bleDictionary
-                    let rssiValue = RSSI.doubleValue*self.rssiScale
+                    let rssiValue = RSSI.doubleValue
+                    
                     if (bleScaned.contains(where: condition)) {
                         let data = bleScaned.filter(condition)
                         var value:[[Double]] = data[bleName]!
@@ -147,6 +147,7 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
                     case .failure(let error):
                         print(getLocalTimeString() + " , (Jupiter) Error : BleManager \(error)")
                     }
+                    
                     
                     NotificationCenter.default.post(name: .scanInfo, object: nil, userInfo: userInfo)
                 }
@@ -227,10 +228,6 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         }
     }
     
-    func setRssiScale(scale: Double) {
-        self.rssiScale = scale
-    }
-    
     func trimBleData(bleInput: Dictionary<String, [[Double]]>?, nowTime: Double, validTime: Double) -> Result<Dictionary<String, [[Double]]>, Error> {
         guard let bleInput = bleInput else {
                 return .failure(TrimBleDataError.invalidInput)
@@ -256,6 +253,11 @@ class BLECentralManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             } else {
                 return .success(trimmedData)
             }
+    }
+
+    enum TrimBleDataError: Error {
+        case invalidInput
+        case noValidData
     }
     
     func isConnected() -> Bool {

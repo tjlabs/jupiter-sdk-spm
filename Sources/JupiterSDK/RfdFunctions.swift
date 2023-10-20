@@ -8,7 +8,6 @@ enum TrimBleDataError: Error {
     case noValidData
 }
 
-
 public func trimBleData(bleInput: [String: [[Double]]]?, nowTime: Double, validTime: Double) -> Result<[String: [[Double]]], Error> {
     guard let bleInput = bleInput else {
             return .failure(TrimBleDataError.invalidInput)
@@ -36,21 +35,68 @@ public func trimBleData(bleInput: [String: [[Double]]]?, nowTime: Double, validT
         }
 }
 
+public func trimBleForCollect(bleData:[String: [[Double]]], nowTime: Double, validTime: Double) -> [String: [[Double]]] {
+    var trimmedData = [String: [[Double]]]()
+
+    for (bleID, bleData) in bleData {
+        var newValue = [[Double]]()
+        for data in bleData {
+            let rssi = data[0]
+            let time = data[1]
+
+            if ((nowTime - time <= validTime) && (rssi >= -100)) {
+                let dataToAdd: [Double] = [rssi, time]
+                newValue.append(dataToAdd)
+            }
+        }
+
+        if (newValue.count > 0) {
+            trimmedData[bleID] = newValue
+        }
+    }
+
+    return trimmedData
+}
 
 public func avgBleData(bleDictionary: [String: [[Double]]]) -> [String: Double] {
     let digit: Double = pow(10, 2)
-    var bleAvg = [String: Double]()
-
-    for (bleID, bleData) in bleDictionary {
-        let bleCount = Double(bleData.count)
-        let rssiSum = bleData.reduce(0.0) { $0 + $1[0] }
-
-        if bleCount > 0 {
-            let averageRSSI = floor((rssiSum / bleCount) * digit) / digit
-            bleAvg[bleID] = averageRSSI
+    var ble = [String: Double]()
+    
+    let keys: [String] = Array(bleDictionary.keys)
+    for index in 0..<keys.count {
+        let bleID: String = keys[index]
+        let bleData: [[Double]] = bleDictionary[bleID]!
+        let bleCount = bleData.count
+        
+        var rssiSum: Double = 0
+        
+        for i in 0..<bleCount {
+            let rssi = bleData[i][0]
+            rssiSum += rssi
+        }
+        let rssiFinal: Double = floor(((rssiSum/Double(bleData.count))) * digit) / digit
+        
+        if ( rssiSum == 0 ) {
+            ble.removeValue(forKey: bleID)
+        } else {
+            ble.updateValue(rssiFinal, forKey: bleID)
         }
     }
-    return bleAvg
+    return ble
+}
+
+public func checkBleChannelNum(bleDict: [String: Double]) -> Int {
+    var numChannels: Int = 0
+    
+    for key in bleDict.keys {
+        let bleRssi: Double = bleDict[key] ?? -100.0
+        
+        if (bleRssi > -95.0) {
+            numChannels += 1
+        }
+    }
+    
+    return numChannels
 }
 
 public func checkSufficientRfd(userTrajectory: [TrajectoryInfo]) -> Bool {

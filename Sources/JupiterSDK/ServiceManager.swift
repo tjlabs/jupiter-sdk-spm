@@ -3,21 +3,22 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.0.10"
+    public static let sdkVersion: String = "3.2.5"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
             let result = input
             if (result.x != 0 && result.y != 0 && result.building_name != "" && result.level_name != "") {
-                
+//                let magHeading = self.jupiterLocationManager.getMagHeading()
                 self.jupiterResult = result
                 observer.update(result: result)
                 
                 if (self.isSaveFlag) {
-                    let rsCompensation = self.rssiBias
+                    let scale = self.normalizationScale
+                    let deviceMin = self.deviceMinRss
                     let scCompensation = self.scCompensation
                     
-                    let data = MobileResult(user_id: self.user_id, mobile_time: result.mobile_time, sector_id: self.sector_id, building_name: result.building_name, level_name: result.level_name, scc: result.scc, x: result.x, y: result.y, absolute_heading: result.absolute_heading, phase: result.phase, calculated_time: result.calculated_time, index: result.index, velocity: result.velocity, ble_only_position: result.ble_only_position, rss_compensation: rsCompensation, sc_compensation: scCompensation, is_indoor: result.isIndoor)
+                    let data = MobileResult(user_id: self.user_id, mobile_time: result.mobile_time, sector_id: self.sector_id, building_name: result.building_name, level_name: result.level_name, scc: result.scc, x: result.x, y: result.y, absolute_heading: result.absolute_heading, phase: result.phase, calculated_time: result.calculated_time, index: result.index, velocity: result.velocity, ble_only_position: result.ble_only_position, normalization_scale: scale, device_min_rss: Int(deviceMin), sc_compensation: scCompensation, is_indoor: result.isIndoor)
                     inputMobileResult.append(data)
                     if ((inputMobileResult.count-1) >= MR_INPUT_NUM) {
                         inputMobileResult.remove(at: 0)
@@ -28,7 +29,7 @@ public class ServiceManager: Observation {
                                 print(log)
                             }
                         })
-                        inputMobileResult = [MobileResult(user_id: "", mobile_time: 0, sector_id: 0, building_name: "", level_name: "", scc: 0, x: 0, y: 0, absolute_heading: 0, phase: 0, calculated_time: 0, index: 0, velocity: 0, ble_only_position: false, rss_compensation: 0, sc_compensation: 0, is_indoor: false)]
+                        inputMobileResult = [MobileResult(user_id: "", mobile_time: 0, sector_id: 0, building_name: "", level_name: "", scc: 0, x: 0, y: 0, absolute_heading: 0, phase: 0, calculated_time: 0, index: 0, velocity: 0, ble_only_position: false, normalization_scale: 0, device_min_rss: 0, sc_compensation: 0, is_indoor: false)]
                     }
                 }
             }
@@ -36,17 +37,18 @@ public class ServiceManager: Observation {
     }
     
     func reporting(input: Int) {
+        postReport(report: input)
         for observer in observers {
             observer.report(flag: input)
         }
     }
     
     public var isSaveFlag: Bool = false
-    var inputMobileResult: [MobileResult] = [MobileResult(user_id: "", mobile_time: 0, sector_id: 0, building_name: "", level_name: "", scc: 0, x: 0, y: 0, absolute_heading: 0, phase: 0, calculated_time: 0, index: 0, velocity: 0, ble_only_position: false, rss_compensation: 0, sc_compensation: 0, is_indoor: false)]
+    var inputMobileResult: [MobileResult] = [MobileResult(user_id: "", mobile_time: 0, sector_id: 0, building_name: "", level_name: "", scc: 0, x: 0, y: 0, absolute_heading: 0, phase: 0, calculated_time: 0, index: 0, velocity: 0, ble_only_position: false, normalization_scale: 0, device_min_rss: 0, sc_compensation: 0, is_indoor: false)]
     
     
-    // 1 ~ 4 : Release  //  0 : Test
-    var serverType: Int = 4
+    // 1 ~ 5 : Release  //  0 : Test
+    var serverType: Int = 5
     var region: String = "Korea"
     
     let jupiterServices: [String] = ["SD", "BD", "CLD", "FLD", "CLE", "FLT", "OSA"]
@@ -64,6 +66,7 @@ public class ServiceManager: Observation {
     
     var PathType = [String: [Int]]()
     var PathPoint = [String: [[Double]]]()
+    var PathPointMinMax = [Double]()
     var PathMagScale = [String: [Double]]()
     var PathHeading = [String: [String]]()
     var LoadPathPoint = [String: Bool]()
@@ -71,6 +74,7 @@ public class ServiceManager: Observation {
     var EntranceArea = [String: [[Double]]]()
     var EntranceOuterWards = [String]()
     var EntranceWards = [String: [String: Int]]()
+    var allEntranceWards = [String]()
     var LevelChangeArea = [String: [[Double]]]()
     var EntranceMatchingArea = [String: [[Double]]]()
     var EntranceNumbers: Int = 0
@@ -93,6 +97,7 @@ public class ServiceManager: Observation {
     // ----- Sensor & BLE ----- //
     public var collectData = CollectData()
     var sensorManager = SensorManager()
+    var jupiterLocationManager = JupiterLocationManager()
     var bleManager = BLECentralManager()
     // ------------------------ //
     
@@ -101,15 +106,12 @@ public class ServiceManager: Observation {
     // ----------------------------- //
     
     // ----- UserVelocityData ----- //
-    var mobilePastTime: Int = 0
     var UVD_INPUT_NUM: Int = 3
     var VALUE_INPUT_NUM: Int = 5
     var INIT_INPUT_NUM: Int = 3
     // ---------------------------- //
     
-    var biasEstimator = BiasEstimator()
-    
-    
+    var paramEstimator = ParameterEstimator()
     // ----- Timer ----- //
     var backgroundUpTimer: DispatchSourceTimer?
     var backgroundUvTimer: DispatchSourceTimer?
@@ -136,12 +138,12 @@ public class ServiceManager: Observation {
     
     var osrTimer: DispatchSourceTimer?
     var OSR_INTERVAL: TimeInterval = 2
-    var phase2Count: Int = 0
+    var phase2ReqCount: Int = 0
+    var phase2BadCount: Int = 0
     var isMovePhase2To4: Bool = false
+    var isNeedRemovePhase2To4Trajectroy: Bool = false
     var distanceAfterPhase2To4: Double = 0
-    var isEnterPhase2: Bool = false
     var SCC_FOR_PHASE4: Double = 0.5
-
     var isVenusMode: Bool = false
     var collectTimer: Timer?
     // ------------------ //
@@ -169,15 +171,16 @@ public class ServiceManager: Observation {
     var phase2Range: [Int] = []
     var phase2Direction: [Int] = []
     var preSearchRange: [Int] = []
-    var DR_BUFFER_SIZE: Int = 10
-    var preTailIndex: Int = 1
+    var DR_BUFFER_SIZE: Int = 30
+    var DR_BUFFER_SIZE_FOR_STRAIGHT: Int = 10
     var USER_TRAJECTORY_LENGTH_ORIGIN: Double = 60
     var USER_TRAJECTORY_LENGTH: Double = 60
-    var USER_TRAJECTORY_DIAGONAL: Double = 200
+    var USER_TRAJECTORY_DIAGONAL: Double = 20
     var NUM_STRAIGHT_INDEX_DR = 10
     var NUM_STRAIGHT_INDEX_PDR = 10
     var preTailHeading: Double = 0
     var preTuMmHeading: Double = 0
+    var magHeading: Double = 0
     
     var unitDistane: Double = 0
     var isStartFlag: Bool = false
@@ -209,11 +212,16 @@ public class ServiceManager: Observation {
     
     var isGetFirstResponse: Bool = false
     var indexAfterResponse: Int = 0
-    var isPossibleEstBias: Bool = false
     
-    var rssiBiasArray: [Int] = [2, 0, 4]
     var rssiBias: Int = 0
-    var rssiScale: Double = 1.0
+    
+    var isPossibleNormalize: Bool = false
+    var deviceMinRss: Double = -100.0
+    var standardMinRss: Double = -99.0
+    var standradMaxRss: Double = -60.0
+    var normalizationScale: Double = 1.0
+    var isScaleLoaded: Bool = false
+    
     var isBiasConverged: Bool = false
     var sccBadCount: Int = 0
     var scCompensationArray: [Double] = [0.8, 1.0, 1.2]
@@ -335,8 +343,8 @@ public class ServiceManager: Observation {
     var lastOutputTime: Int = 0
     var pastOutputTime: Int = 0
     var isIndoor: Bool = false
-    var timeForInit: Double = 31
-    public var TIME_INIT_THRESHOLD: Double = 30
+    var timeForInit: Double = 26
+    public var TIME_INIT_THRESHOLD: Double = 25
     
     // State Observer
     private var venusObserver: Any!
@@ -480,25 +488,13 @@ public class ServiceManager: Observation {
         self.RFD_INPUT_NUM = numInput
         self.RFD_INTERVAL = interval
         
-        // Check Save Flag
-        let debugInput = MobileDebug(sector_id: sector_id)
-        NetworkManager.shared.postMobileDebug(url: DEBUG_URL, input: debugInput, completion: { [self] statusCode, returnedString in
-            if (statusCode == 200) {
-                let result = decodeMobileDebug(json: returnedString)
-                setSaveFlag(flag: result.sector_debug)
-            }
-        })
-        
         if (!jupiterServices.contains(service)) {
             let log: String = getLocalTimeString() + " , (Jupiter) Error : Invalid Service Name"
             message = log
-            
-            self.notificationCenterRemoveObserver()
             completion(false, message)
         } else {
             if (self.isStartFlag) {
                 message = getLocalTimeString() + " , (Jupiter) Error : Please stop another service"
-                self.notificationCenterRemoveObserver()
                 completion(false, message)
             } else {
                 self.isStartFlag = true
@@ -511,6 +507,15 @@ public class ServiceManager: Observation {
                 } else {
                     setServerUrl(server: self.serverType)
                     
+                    // Check Save Flag
+                    let debugInput = MobileDebug(sector_id: sector_id)
+                    NetworkManager.shared.postMobileDebug(url: DEBUG_URL, input: debugInput, completion: { [self] statusCode, returnedString in
+                        if (statusCode == 200) {
+                            let result = decodeMobileDebug(json: returnedString)
+                            setSaveFlag(flag: result.sector_debug)
+                        }
+                    })
+
                     if (self.user_id.isEmpty || self.user_id.contains(" ")) {
                         let log: String = getLocalTimeString() + " , (Jupiter) Error : User ID(input = \(self.user_id)) cannot be empty or contain space"
                         message = log
@@ -522,7 +527,7 @@ public class ServiceManager: Observation {
                         let userInfo = UserLogin(user_id: self.user_id, device_model: deviceModel, os_version: osVersion, sdk_version: ServiceManager.sdkVersion)
                         NetworkManager.shared.postUserLogin(url: LOGIN_URL, input: userInfo, completion: { [self] statusCode, returnedString in
                             if (statusCode == 200) {
-                                let log: String = getLocalTimeString() + " , (Jupiter) Success : User Login"
+                                let log: String = getLocalTimeString() + " , (Jupiter) Success : User Login(input = \(self.user_id))"
                                 print(log)
                                 
                                 let inputInfo = Info(sector_id: sector_id, operating_system: "ios")
@@ -530,7 +535,14 @@ public class ServiceManager: Observation {
                                     if (statusCode == 200) {
                                         let sectorInfoResult = jsonToInfoResult(json: returnedString)
                                         let entranceInfo = sectorInfoResult.entrances
-                            
+                                        if (sectorInfoResult.standard_rss_list.isEmpty) {
+                                            self.standardMinRss = -99.5
+                                            self.standradMaxRss = -55.0
+                                        } else {
+                                            self.standardMinRss = Double(sectorInfoResult.standard_rss_list[0])
+                                            self.standradMaxRss = Double(sectorInfoResult.standard_rss_list[1])
+                                        }
+                                        
                                         self.EntranceNumbers = entranceInfo.count
                                         var entranceOuterWards: [String] = []
                                         var entranceScales: [Double] = []
@@ -540,25 +552,28 @@ public class ServiceManager: Observation {
                                             
                                             let entranceKey = "\(entranceInfo[i].entrance_number)"
                                             self.EntranceWards[entranceKey] = entranceInfo[i].entrance_rss
+                                            
+                                            for (key, _) in entranceInfo[i].entrance_rss {
+                                                let wardId: String = key
+                                                self.allEntranceWards.append(wardId)
+                                            }
                                         }
                                         self.EntranceOuterWards = entranceOuterWards
                                         self.EntranceVelocityScale = entranceScales
 
                                         let buildings_n_levels: [[String]] = sectorInfoResult.building_level
-
                                         var infoBuilding = [String]()
                                         var infoLevel = [String:[String]]()
                                         var infoLevelWithoutD = [String:[String]]()
                                         for building in 0..<buildings_n_levels.count {
                                             let buildingName: String = buildings_n_levels[building][0]
-                                            let levelName: String = buildings_n_levels[building][1]
-
                                             // Building
                                             if !(infoBuilding.contains(buildingName)) {
                                                 infoBuilding.append(buildingName)
                                             }
-
+                                            
                                             // Level
+                                            let levelName: String = buildings_n_levels[building][1]
                                             if let value = infoLevel[buildingName] {
                                                 var levels:[String] = value
                                                 levels.append(levelName)
@@ -580,13 +595,13 @@ public class ServiceManager: Observation {
                                             }
                                         }
                                         self.buildingsAndLevels = infoLevel
-                                        let countAll = countAllValuesInDictionary(infoLevel)
+                                        let countAll = countAllValuesInDictionary(infoLevelWithoutD)
                                         
                                         self.isMapMatching = true
                                         // Key-Value Saved
                                         for i in 0..<infoBuilding.count {
                                             let buildingName = infoBuilding[i]
-                                            let levelList = infoLevel[buildingName]
+                                            let levelList = infoLevelWithoutD[buildingName]
                                             for j in 0..<levelList!.count {
                                                 let levelName = levelList![j]
                                                 let key: String = "\(buildingName)_\(levelName)"
@@ -651,67 +666,54 @@ public class ServiceManager: Observation {
                                                                         let resultTraj = decodeTraj(json: returnedString)
                                                                         self.USER_TRAJECTORY_LENGTH_ORIGIN = Double(resultTraj.trajectory_length + 10)
                                                                         self.USER_TRAJECTORY_LENGTH = Double(resultTraj.trajectory_length + 10)
-                                                                        self.USER_TRAJECTORY_DIAGONAL = Double(resultTraj.trajectory_diagonal + 10)
+                                                                        self.USER_TRAJECTORY_DIAGONAL = Double(resultTraj.trajectory_diagonal)
                                                                         
                                                                         self.NUM_STRAIGHT_INDEX_DR = Int(ceil(self.USER_TRAJECTORY_LENGTH/6))
                                                                         self.NUM_STRAIGHT_INDEX_PDR = Int(ceil(self.USER_TRAJECTORY_DIAGONAL/6))
                                                                         print(getLocalTimeString() + " , (Jupiter) Trajectory Info Load : \(self.USER_TRAJECTORY_LENGTH) // \(self.USER_TRAJECTORY_DIAGONAL) // \(self.NUM_STRAIGHT_INDEX_DR)")
                                                                         
                                                                         // Load Bias
-                                                                        let inputGetBias = JupiterBiasGet(device_model: self.deviceModel, os_version: self.osVersion, sector_id: self.sector_id)
-                                                                        NetworkManager.shared.getJupiterBias(url: RC_URL, input: inputGetBias, completion: { [self] statusCode, returnedString in
-                                                                            let loadedBias = biasEstimator.loadRssiBias(sector_id: self.sector_id)
+                                                                        let inputGetParam = JupiterParamGet(device_model: self.deviceModel, os_version: self.osVersion, sector_id: self.sector_id)
+                                                                        NetworkManager.shared.getJupiterParam(url: RC_URL, input: inputGetParam, completion: { [self] statusCode, returnedString in
+                                                                            let loadedScale = paramEstimator.loadNormalizationScale(sector_id: self.sector_id)
                                                                             if (statusCode == 200) {
-                                                                                let result = decodeRC(json: returnedString)
+                                                                                let result = decodeParam(json: returnedString)
                                                                                 if (result.rss_compensations.isEmpty) {
-                                                                                    let inputGetDeviceBias = JupiterDeviceBiasGet(device_model: self.deviceModel, sector_id: self.sector_id)
-                                                                                    NetworkManager.shared.getJupiterDeviceBias(url: RC_URL, input: inputGetDeviceBias, completion: { [self] statusCode, returnedString in
+                                                                                    let inputGetDeviceParam = JupiterDeviceParamGet(device_model: self.deviceModel, sector_id: self.sector_id)
+                                                                                    NetworkManager.shared.getJupiterDeviceParam(url: RC_URL, input: inputGetDeviceParam, completion: { [self] statusCode, returnedString in
                                                                                         if (statusCode == 200) {
-                                                                                            let result = decodeRC(json: returnedString)
+                                                                                            let result = decodeParam(json: returnedString)
                                                                                             if (result.rss_compensations.isEmpty) {
                                                                                                 // Need Bias Estimation
-                                                                                                self.rssiBias = loadedBias.0
-                                                                                                self.sccGoodBiasArray = loadedBias.1
-                                                                                                self.isBiasConverged = loadedBias.2
                                                                                                 displayOutput.bias = self.rssiBias
                                                                                                 displayOutput.isConverged = self.isBiasConverged
+                                                                                                self.isScaleLoaded = false
                                                                                                 
-                                                                                                let biasArray = biasEstimator.makeRssiBiasArray(bias: loadedBias.0)
-                                                                                                self.rssiBiasArray = biasArray
                                                                                                 self.isStartComplete = true
-                                                                                                
                                                                                                 self.startTimer()
                                                                                                 
-                                                                                                print(localTime + " , (Jupiter) Need Bias Estimation // bias = \(self.rssiBias) , array = \(self.sccGoodBiasArray)")
+                                                                                                print(localTime + " , (Jupiter) Information : Need Estimation")
                                                                                                 let log: String = localTime + " , (Jupiter) Success : Service Initalization"
                                                                                                 message = log
                                                                                                 self.reporting(input: START_FLAG)
                                                                                                 completion(true, message)
                                                                                             } else {
-                                                                                                // Success Load Bias without OS
+                                                                                                // Success Load without OS
                                                                                                 if let closest = findClosestStructure(to: self.osVersion, in: result.rss_compensations) {
-                                                                                                    let biasFromServer: rss_compensation = closest
+                                                                                                    let paramFromServer: rss_compensation = closest
                                                                                                     
-                                                                                                    self.rssiScale = biasFromServer.scale_factor
-                                                                                                    bleManager.setRssiScale(scale: self.rssiScale)
-                                                                                                    
-                                                                                                    if (loadedBias.2) {
-                                                                                                        self.rssiBias = loadedBias.0
-                                                                                                        self.sccGoodBiasArray = loadedBias.1
-                                                                                                        self.isBiasConverged = true
-                                                                                                        print(localTime + " , (Jupiter) Bias Load (Device // Cache) : \(loadedBias.0)")
+                                                                                                    if (loadedScale.0) {
+                                                                                                        self.normalizationScale = loadedScale.1
+                                                                                                        print(localTime + " , (Jupiter) Load Param (Device // Cache) : \(loadedScale.0)")
                                                                                                     } else {
-                                                                                                        self.rssiBias = biasFromServer.rss_compensation
-                                                                                                        self.sccGoodBiasArray = loadedBias.1
-                                                                                                        self.isBiasConverged = false
-                                                                                                        print(localTime + " , (Jupiter) Bias Load (Device) : \(biasFromServer.rss_compensation)")
+                                                                                                        self.normalizationScale = paramFromServer.normalization_scale
+                                                                                                        print(localTime + " , (Jupiter) Load Param (Device) : \(paramFromServer.normalization_scale)")
                                                                                                     }
                                                                                                     
                                                                                                     displayOutput.bias = self.rssiBias
                                                                                                     displayOutput.isConverged = self.isBiasConverged
+                                                                                                    self.isScaleLoaded = true
                                                                                                     
-                                                                                                    let biasArray = biasEstimator.makeRssiBiasArray(bias: self.rssiBias)
-                                                                                                    self.rssiBiasArray = biasArray
                                                                                                     self.isStartComplete = true
                                                                                                     self.startTimer()
                                                                                                     
@@ -720,17 +722,14 @@ public class ServiceManager: Observation {
                                                                                                     self.reporting(input: START_FLAG)
                                                                                                     completion(true, message)
                                                                                                 } else {
-                                                                                                    self.rssiBias = loadedBias.0
-                                                                                                    self.sccGoodBiasArray = loadedBias.1
-                                                                                                    self.isBiasConverged = loadedBias.2
                                                                                                     displayOutput.bias = self.rssiBias
                                                                                                     displayOutput.isConverged = self.isBiasConverged
+                                                                                                    self.isScaleLoaded = false
                                                                                                     
-                                                                                                    let biasArray = biasEstimator.makeRssiBiasArray(bias: loadedBias.0)
-                                                                                                    self.rssiBiasArray = biasArray
                                                                                                     self.isStartComplete = true
                                                                                                     self.startTimer()
                                                                                                     
+                                                                                                    print(localTime + " , (Jupiter) Information : Need Estimation")
                                                                                                     let log: String = localTime + " , (Jupiter) Success : Service Initalization"
                                                                                                     message = log
                                                                                                     self.reporting(input: START_FLAG)
@@ -738,7 +737,7 @@ public class ServiceManager: Observation {
                                                                                                 }
                                                                                             }
                                                                                         } else {
-                                                                                            let log: String = getLocalTimeString() + " , (Jupiter) Error : Bias Load (Device)"
+                                                                                            let log: String = getLocalTimeString() + " , (Jupiter) Error : Load Parameters (Device)"
                                                                                             message = log
                                                                                             self.stopTimer()
                                                                                             self.isStartFlag = false
@@ -748,27 +747,19 @@ public class ServiceManager: Observation {
                                                                                     })
                                                                                 } else {
                                                                                     // Succes Load Bias
-                                                                                    let biasFromServer: rss_compensation = result.rss_compensations[0]
-                                                                                    
-                                                                                    self.rssiScale = biasFromServer.scale_factor
-                                                                                    bleManager.setRssiScale(scale: self.rssiScale)
-                                                                                    
-                                                                                    if (loadedBias.2) {
-                                                                                        self.rssiBias = loadedBias.0
-                                                                                        self.sccGoodBiasArray = loadedBias.1
-                                                                                        print(getLocalTimeString() + " , (Jupiter) Bias Load (Device & OS // Cache) : \(loadedBias.0)")
+                                                                                    let paramFromServer: rss_compensation = result.rss_compensations[0]
+                                                                                    if (loadedScale.0) {
+                                                                                        self.normalizationScale = loadedScale.1
+                                                                                        print(localTime + " , (Jupiter) Load Param (Device // Cache) : \(loadedScale.0)")
                                                                                     } else {
-                                                                                        self.rssiBias = biasFromServer.rss_compensation
-                                                                                        self.sccGoodBiasArray = loadedBias.1
-                                                                                        print(getLocalTimeString() + " , (Jupiter) Bias Load (Device & OS) : \(biasFromServer.rss_compensation)")
+                                                                                        self.normalizationScale = paramFromServer.normalization_scale
+                                                                                        print(localTime + " , (Jupiter) Load Param (Device) : \(paramFromServer.normalization_scale)")
                                                                                     }
-                                                                                    self.isBiasConverged = true
                                                                                     
                                                                                     displayOutput.bias = self.rssiBias
                                                                                     displayOutput.isConverged = self.isBiasConverged
+                                                                                    self.isScaleLoaded = true
                                                                                     
-                                                                                    let biasArray = biasEstimator.makeRssiBiasArray(bias: self.rssiBias)
-                                                                                    self.rssiBiasArray = biasArray
                                                                                     self.isStartComplete = true
                                                                                     self.startTimer()
                                                                                     
@@ -778,7 +769,7 @@ public class ServiceManager: Observation {
                                                                                     completion(true, message)
                                                                                 }
                                                                             } else {
-                                                                                let log: String = getLocalTimeString() + " , (Jupiter) Error : Load Bias"
+                                                                                let log: String = getLocalTimeString() + " , (Jupiter) Error : Load Parameters"
                                                                                 message = log
                                                                                 self.stopTimer()
                                                                                 self.isStartFlag = false
@@ -881,7 +872,7 @@ public class ServiceManager: Observation {
     
     public func setSaveFlag(flag: Bool) {
         self.isSaveFlag = flag
-        print(getLocalTimeString() + " , (Jupiter) Set Save Flag : \(self.isSaveFlag)")
+        print(getLocalTimeString() + " , (Jupiter) Information : Set Save Flag = \(self.isSaveFlag)")
     }
     
     
@@ -897,6 +888,10 @@ public class ServiceManager: Observation {
             SERVER_TYPE = "-3"
         case 4:
             SERVER_TYPE = "-4"
+        case 5:
+            SERVER_TYPE = "-5"
+        case 6:
+            SERVER_TYPE = "-6"
         default:
             SERVER_TYPE = ""
         }
@@ -919,6 +914,10 @@ public class ServiceManager: Observation {
             url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp-3/\(self.sectorIdOrigin)/\(key).csv"
         case 4:
             url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp-4/\(self.sectorIdOrigin)/\(key).csv"
+        case 5:
+            url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp-5/\(self.sectorIdOrigin)/\(key).csv"
+        case 6:
+            url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp-6/\(self.sectorIdOrigin)/\(key).csv"
         default:
             url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/pp/\(self.sectorIdOrigin)/\(key).csv"
         }
@@ -998,6 +997,10 @@ public class ServiceManager: Observation {
             url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/entrance-3/\(self.sectorIdOrigin)/\(key).csv"
         case 4:
             url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/entrance-4/\(self.sectorIdOrigin)/\(key).csv"
+        case 5:
+            url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/entrance-5/\(self.sectorIdOrigin)/\(key).csv"
+        case 6:
+            url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/entrance-6/\(self.sectorIdOrigin)/\(key).csv"
         default:
             url = "https://storage.googleapis.com/\(IMAGE_URL)/ios/entrance/\(self.sectorIdOrigin)/\(key).csv"
         }
@@ -1017,7 +1020,8 @@ public class ServiceManager: Observation {
             if (self.service == "FLT") {
                 unitDRInfo = UnitDRInfo()
                 userTrajectory = TrajectoryInfo()
-                biasEstimator.saveRssiBias(bias: self.rssiBias, biasArray: self.sccGoodBiasArray, isConverged: self.isBiasConverged, sector_id: self.sector_id)
+                paramEstimator.saveNormalizationScale(scale: self.normalizationScale, sector_id: self.sector_id)
+                self.postParam(sector_id: self.sector_id, normailzationScale: self.normalizationScale)
             }
             
             self.initVariables()
@@ -1066,7 +1070,6 @@ public class ServiceManager: Observation {
         self.bleTrimed = [String: [[Double]]]()
         self.bleAvg = [String: Double]()
         self.reporting(input: BACKGROUND_FLAG)
-        postReport(report: BACKGROUND_FLAG)
     }
     
     public func runForegroundMode() {
@@ -1083,11 +1086,10 @@ public class ServiceManager: Observation {
         self.bleManager.startScan(option: .Foreground)
             
         self.startTimer()
-        
+            
         self.isBackground = false
         self.isForeground = true
         self.reporting(input: FOREGROUND_FLAG)
-        postReport(report: FOREGROUND_FLAG)
     }
     
     private func initVariables() {
@@ -1126,6 +1128,7 @@ public class ServiceManager: Observation {
         self.currentEntranceIndex = 0
         
         self.isInNetworkBadEntrance = false
+//        self.isBackground = false
     }
     
     func notificationCenterAddObserver() {
@@ -1141,7 +1144,6 @@ public class ServiceManager: Observation {
     @objc func onDidReceiveNotification(_ notification: Notification) {
         if notification.name == .didBecomeVenus {
             self.phase = 1
-            self.isPossibleEstBias = false
             self.isActiveKf = false
             self.timeUpdateFlag = false
             self.measurementUpdateFlag = false
@@ -1151,13 +1153,11 @@ public class ServiceManager: Observation {
             self.measurementOutput = FineLocationTrackingFromServer()
             self.isVenusMode = true
             self.reporting(input: VENUS_FLAG)
-            postReport(report: VENUS_FLAG)
         }
     
         if notification.name == .didBecomeJupiter {
             self.isVenusMode = false
             self.reporting(input: JUPITER_FLAG)
-            postReport(report: JUPITER_FLAG)
         }
     }
     
@@ -1184,30 +1184,30 @@ public class ServiceManager: Observation {
         
         switch(self.service) {
         case "SD":
-            let input = CoarseLevelDetection(user_id: self.user_id, mobile_time: currentTime)
+            let input = CoarseLevelDetection(user_id: self.user_id, mobile_time: currentTime, normalization_scale: self.normalizationScale, device_min_rss: Int(self.deviceMinRss), standard_min_rss: Int(self.standardMinRss))
             NetworkManager.shared.postCLD(url: CLD_URL, input: input, completion: { statusCode, returnedString in
                 let sdString = CLDtoSD(json: returnedString)
                 completion(statusCode, sdString)
             })
         case "BD":
-            let input = CoarseLevelDetection(user_id: self.user_id, mobile_time: currentTime)
+            let input = CoarseLevelDetection(user_id: self.user_id, mobile_time: currentTime, normalization_scale: self.normalizationScale, device_min_rss: Int(self.deviceMinRss), standard_min_rss: Int(self.standardMinRss))
             NetworkManager.shared.postCLD(url: CLD_URL, input: input, completion: { statusCode, returnedString in
                 let bdString = CLDtoBD(json: returnedString)
                 completion(statusCode, bdString)
             })
         case "CLD":
-            let input = CoarseLevelDetection(user_id: self.user_id, mobile_time: currentTime)
+            let input = CoarseLevelDetection(user_id: self.user_id, mobile_time: currentTime, normalization_scale: self.normalizationScale, device_min_rss: Int(self.deviceMinRss), standard_min_rss: Int(self.standardMinRss))
             NetworkManager.shared.postCLD(url: CLD_URL, input: input, completion: { statusCode, returnedString in
                 completion(statusCode, returnedString)
             })
         case "FLD":
-            let input = CoarseLocationEstimation(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, search_direction_list: [0, 90, 180, 270])
+            let input = CoarseLocationEstimation(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, search_direction_list: [0, 90, 180, 270], normalization_scale: self.normalizationScale, device_min_rss: Int(self.standardMinRss))
             NetworkManager.shared.postCLE(url: CLE_URL, input: input, completion: { statusCode, returnedString in
                 let fldString = CLEtoFLD(json: returnedString)
                 completion(statusCode, fldString)
             })
         case "CLE":
-            let input = CoarseLocationEstimation(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, search_direction_list: [0, 90, 180, 270])
+            let input = CoarseLocationEstimation(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, search_direction_list: [0, 90, 180, 270], normalization_scale: self.normalizationScale, device_min_rss: Int(self.standardMinRss))
             NetworkManager.shared.postCLE(url: CLE_URL, input: input, completion: { statusCode, returnedString in
                 completion(statusCode, returnedString)
             })
@@ -1557,12 +1557,15 @@ public class ServiceManager: Observation {
                         if (self.isActiveKf) {
                             result = self.lastResult
                         } else {
-                            let correctResult = pathMatching(building: buildingName, level: levelName, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], isPast: isPast, HEADING_RANGE: HEADING_RANGE, isUseHeading: false, pathType: 1)
-                            if (correctResult.isSuccess) {
-                                result.x = correctResult.xyh[0]
-                                result.y = correctResult.xyh[1]
-                                result.absolute_heading = correctResult.xyh[2]
-                            }
+                            result.x = correctResult.xyh[0]
+                            result.y = correctResult.xyh[1]
+                            result.absolute_heading = correctResult.xyh[2]
+//                            let correctResult = pathMatching(building: buildingName, level: levelName, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], isPast: isPast, HEADING_RANGE: HEADING_RANGE, isUseHeading: false, pathType: 1)
+//                            if (correctResult.isSuccess) {
+//                                result.x = correctResult.xyh[0]
+//                                result.y = correctResult.xyh[1]
+//                                result.absolute_heading = correctResult.xyh[2]
+//                            }
                         }
                     }
                 }
@@ -1598,9 +1601,14 @@ public class ServiceManager: Observation {
                     self.isBleOff = true
                     self.timeBleOff = 0
                     self.reporting(input: BLE_OFF_FLAG)
-                    postReport(report: BLE_OFF_FLAG)
                 }
             }
+        }
+        
+        let checkLastScannedTime = (getCurrentTimeInMillisecondsDouble() - bleManager.bleLastScannedTime)*1e-3
+        if (checkLastScannedTime >= 6) {
+            // 스캔이 동작안한지 6초 이상 지남
+            self.reporting(input: BLE_SCAN_STOP_FLAG)
         }
         
         bleManager.setValidTime(mode: self.runMode)
@@ -1628,7 +1636,6 @@ public class ServiceManager: Observation {
                                 self.isGetFirstResponse = true
                                 self.isIndoor = true
                                 self.reporting(input: INDOOR_FLAG)
-                                postReport(report: INDOOR_FLAG)
                                 
                                 let result = findResult.1
                                 
@@ -1643,7 +1650,6 @@ public class ServiceManager: Observation {
                                         if (entranceResult.0 != 0) {
                                             let velocityScale: Double = self.EntranceVelocityScale[i]
                                             print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : number = \(entranceResult.0)")
-                                            print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : scale = \(velocityScale)")
                                             self.currentEntrance = "\(result.building_name)_\(result.level_name)_\(entranceResult.0)"
                                             self.currentEntranceLength = entranceResult.1
                                             self.entranceVelocityScale = velocityScale
@@ -1675,13 +1681,31 @@ public class ServiceManager: Observation {
 //            self.bleAvg = ["TJ-00CB-0000030D-0000":-76.0] // COEX B2
 //            self.bleAvg = ["TJ-00CB-00000242-0000":-76.0] // S3 7F
 //            self.bleAvg = ["TJ-00CB-000003E7-0000":-76.0] // Plan Group
+//            self.bleAvg = ["TJ-00CB-00000407-0000":-76.0] // Dabeeo 8F
             
+            paramEstimator.refreshWardMinRssi(bleData: self.bleAvg)
+            paramEstimator.refreshWardMaxRssi(bleData: self.bleAvg)
+            if (self.isGetFirstResponse && self.isIndoor && self.indexAfterResponse >= 30 && (self.unitDrInfoIndex%5 == 0)) {
+                if (self.isScaleLoaded) {
+                    if (self.currentLevel != "B0") {
+                        let normalizationScale: Double = paramEstimator.calNormalizationScale(standardMin: self.standardMinRss, standardMax: self.standradMaxRss)
+                        let smoothedScale: Double = paramEstimator.smoothNormalizationScale(scale: normalizationScale)
+                        self.normalizationScale = smoothedScale
+                        let deviceMin: Double = paramEstimator.getDeviceMinRss()
+                        self.deviceMinRss = deviceMin
+                    }
+                } else {
+                    let normalizationScale: Double = paramEstimator.calNormalizationScale(standardMin: self.standardMinRss, standardMax: self.standradMaxRss)
+                    let smoothedScale: Double = paramEstimator.smoothNormalizationScale(scale: normalizationScale)
+                    self.normalizationScale = smoothedScale
+                    let deviceMin: Double = paramEstimator.getDeviceMinRss()
+                    self.deviceMinRss = deviceMin
+                }
+            }
+            paramEstimator.refreshAllEntranceWardRssi(allEntranceWards: self.allEntranceWards, bleData: self.bleAvg)
             let isSufficientRfdBuffer = rflowCorrelator.accumulateRfdBuffer(bleData: self.bleAvg)
             let isSufficientRfdVelocityBuffer = rflowCorrelator.accumulateRfdVelocityBuffer(bleData: self.bleAvg)
-            unitDRGenerator.setRflow(scc: rflowCorrelator.getRflow(), isSufficient: isSufficientRfdBuffer)
-//            unitDRGenerator.setRfScc(scc: 0.0, isSufficient: isSufficientRfdBuffer)
-//            print(getLocalTimeString() + " , (Jupiter) Information : RF SCC = \(rfSurfaceCorrelator.getRfdScc())")
-//            print(getLocalTimeString() + " , (Jupiter) Information : RF SCC (Velocity) = \(rfSurfaceCorrelator.getRfdVelocityScc())")
+            unitDRGenerator.setRflow(rflow: rflowCorrelator.getRflow(), rflowForVelocity: rflowCorrelator.getRflowForVelocityScale(), isSufficient: isSufficientRfdBuffer, isSufficientForVelocity: isSufficientRfdVelocityBuffer)
             
             if (!self.bleAvg.isEmpty) {
                 self.timeBleOff = 0
@@ -1699,16 +1723,12 @@ public class ServiceManager: Observation {
                     inputReceivedForce.append(data)
                     if ((inputReceivedForce.count-1) >= RFD_INPUT_NUM) {
                         inputReceivedForce.remove(at: 0)
-                        NetworkManager.shared.postReceivedForce(url: RF_URL, input: inputReceivedForce, completion: { [self] statusCode, returnedStrig in
+                        NetworkManager.shared.postReceivedForce(url: RF_URL, input: inputReceivedForce, completion: { [self] statusCode, returnedString in
                             if (statusCode != 200) {
                                 let localTime = getLocalTimeString()
-                                let log: String = localTime + " , (Jupiter) Error : RFD \(statusCode) " + returnedStrig
+                                let log: String = localTime + " , (Jupiter) Error : RFD \(statusCode) " + returnedString
                                 print(log)
-                                
-                                if (statusCode == 406) {
-                                    self.reporting(input: RFD_FLAG)
-                                    postReport(report: RFD_FLAG)
-                                }
+                                self.reporting(input: RFD_FLAG)
                             }
                         })
                         inputReceivedForce = [ReceivedForce(user_id: "", mobile_time: 0, ble: [:], pressure: 0)]
@@ -1740,11 +1760,11 @@ public class ServiceManager: Observation {
                         }
                     }
                 }
-
+                
+                self.timeSleepRF += RFD_INTERVAL
                 if (self.timeSleepRF >= SLEEP_THRESHOLD) {
                     self.isActiveService = false
                     self.timeSleepRF = 0
-                    
                     self.enterSleepMode()
                 }
             }
@@ -1756,22 +1776,7 @@ public class ServiceManager: Observation {
         if (!self.isIndoor) {
             self.timeForInit += RFD_INTERVAL
         }
-        
         self.isRfdTimerRunningFinished = false
-    }
-    
-    func checkBleChannelNum(bleDict: [String: Double]) -> Int {
-        var numChannels: Int = 0
-        
-        for key in bleDict.keys {
-            let bleRssi: Double = bleDict[key] ?? -100.0
-            
-            if (bleRssi > -95.0) {
-                numChannels += 1
-            }
-        }
-        
-        return numChannels
     }
     
     @objc func userVelocityTimerUpdate() {
@@ -1893,19 +1898,13 @@ public class ServiceManager: Observation {
                     }
                 }
                 
-                if (self.isGetFirstResponse && !self.isPossibleEstBias) {
-                    if (self.isIndoor) {
-                        self.indexAfterResponse += 1
-                        if (self.indexAfterResponse >= MINIMUN_INDEX_FOR_BIAS) {
-                            self.isPossibleEstBias = true
-                        }
-                    }
+                if (self.isGetFirstResponse && self.isIndoor) {
+                    self.indexAfterResponse += 1
                 }
                 
                 // Check Entrance Level
                 let isEntrance = self.checkInEntranceLevel(result: self.jupiterResult, isGetFirstResponse: self.isGetFirstResponse)
                 unitDRGenerator.setIsEntranceLevel(flag: isEntrance)
-                
                 
                 if (self.isGetFirstResponse) {
                     if (self.isStartSimulate) {
@@ -1962,10 +1961,15 @@ public class ServiceManager: Observation {
                         let entraceKey: String = self.currentEntrance
                         let entranceWardKey: [String] = entraceKey.components(separatedBy: "_")
                         if let entranceWards = self.EntranceWards[entranceWardKey[entranceWardKey.count-1]] {
-                            biasEstimator.refreshEntranceWardRssi(entranceWard: entranceWards, bleData: self.bleAvg)
+                            paramEstimator.refreshEntranceWardRssi(entranceWard: entranceWards, bleData: self.bleAvg)
                         }
                         
                         self.resultToReturn = self.simulateEntrance(originalResult: self.outputResult, runMode: self.runMode, currentEntranceIndex: self.currentEntranceIndex)
+                        if (self.currentEntranceIndex == 0) {
+                            self.isIndoor = true
+                            self.reporting(input: INDOOR_FLAG)
+                        }
+                        
                         self.currentEntranceIndex += 1
                         if (self.indexAfterSimulate >= Int(Double(MINIMUN_INDEX_FOR_BIAS)*1.5)) {
                             let diffX = self.resultToReturn.x - self.outputResult.x
@@ -1978,28 +1982,6 @@ public class ServiceManager: Observation {
                             let diffXy = sqrt(diffX*diffX + diffY*diffY)
                             let cLevel = removeLevelDirectionString(levelName: self.currentLevel)
                             if (diffXy <= 10 && diffH <= 30 && self.isActiveKf && (cLevel == self.resultToReturn.level_name)) {
-                                let entraceKey: String = self.currentEntrance
-                                let entranceWardKey: [String] = entraceKey.components(separatedBy: "_")
-                                if let entranceWards = self.EntranceWards[entranceWardKey[entranceWardKey.count-1]] {
-                                    let biasInEntrance = biasEstimator.estimateRssiBiasInEntrance(entranceWard: entranceWards)
-                                    print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : bias = \(biasInEntrance) (Position Matched)")
-                                    if (self.isBiasConverged) {
-                                        if (abs(biasInEntrance - self.rssiBias) >= 7) {
-                                            print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : biasDiff = \(abs(biasInEntrance - self.rssiBias)) (Position Matched)")
-                                            self.rssiBias = biasInEntrance
-                                            self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
-                                            self.isBiasConverged = true
-                                            
-                                            biasEstimator.saveRssiBias(bias: self.rssiBias, biasArray: self.sccGoodBiasArray, isConverged: self.isBiasConverged, sector_id: self.sector_id)
-                                        }
-                                    } else {
-                                        self.rssiBias = biasInEntrance
-                                        self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
-                                        self.isBiasConverged = true
-                                    }
-                                    biasEstimator.clearEntranceWardRssi()
-                                }
-                                
                                 print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : Finish (Position Matched)")
                                 self.isStartSimulate = false
                                 self.isInNetworkBadEntrance = false
@@ -2011,29 +1993,6 @@ public class ServiceManager: Observation {
                                 if (self.isActiveKf && (cLevel == self.resultToReturn.level_name)) {
                                     let isFind = self.findClosestSimulation(originalResult: self.outputResult, currentEntranceIndex: self.currentEntranceIndex)
                                     if (isFind) {
-                                        let entraceKey: String = self.currentEntrance
-                                        let entranceWardKey: [String] = entraceKey.components(separatedBy: "_")
-                                        if let entranceWards = self.EntranceWards[entranceWardKey[entranceWardKey.count-1]] {
-                                            let biasInEntrance = biasEstimator.estimateRssiBiasInEntrance(entranceWard: entranceWards)
-                                            print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : bias = \(biasInEntrance) (Position Passed)")
-                                            
-                                            if (self.isBiasConverged) {
-                                                if (abs(biasInEntrance - self.rssiBias) >= 7) {
-                                                    print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : biasDiff = \(abs(biasInEntrance - self.rssiBias)) (Position Passed)")
-                                                    self.rssiBias = biasInEntrance
-                                                    self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
-                                                    self.isBiasConverged = true
-                                                    
-                                                    biasEstimator.saveRssiBias(bias: self.rssiBias, biasArray: self.sccGoodBiasArray, isConverged: self.isBiasConverged, sector_id: self.sector_id)
-                                                }
-                                            } else {
-                                                self.rssiBias = biasInEntrance
-                                                self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
-                                                self.isBiasConverged = true
-                                            }
-                                            biasEstimator.clearEntranceWardRssi()
-                                        }
-                                        
                                         print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : Finish (Position Passed)")
                                         self.isStartSimulate = false
                                         self.isInNetworkBadEntrance = false
@@ -2064,30 +2023,6 @@ public class ServiceManager: Observation {
                             self.outputResult.y = self.resultToReturn.y
                             self.outputResult.absolute_heading = self.resultToReturn.absolute_heading
                         }
-                        
-                        let entraceKey: String = self.currentEntrance
-                        let entranceWardKey: [String] = entraceKey.components(separatedBy: "_")
-                        if let entranceWards = self.EntranceWards[entranceWardKey[entranceWardKey.count-1]] {
-                            let biasInEntrance = biasEstimator.estimateRssiBiasInEntrance(entranceWard: entranceWards)
-                            print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : bias = \(biasInEntrance) (End Simulating)")
-                            
-                            if (self.isBiasConverged) {
-                                if (abs(biasInEntrance - self.rssiBias) >= 7) {
-                                    print(getLocalTimeString() + " , (Jupiter) Bias Est in Entrance : biasDiff = \(abs(biasInEntrance - self.rssiBias)) (End Simulating)")
-                                    self.rssiBias = biasInEntrance
-                                    self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
-                                    self.isBiasConverged = true
-                                    
-                                    biasEstimator.saveRssiBias(bias: self.rssiBias, biasArray: self.sccGoodBiasArray, isConverged: self.isBiasConverged, sector_id: self.sector_id)
-                                }
-                            } else {
-                                self.rssiBias = biasInEntrance
-                                self.rssiBiasArray = biasEstimator.makeRssiBiasArray(bias: biasInEntrance)
-                                self.isBiasConverged = true
-                            }
-                            biasEstimator.clearEntranceWardRssi()
-                        }
-                        
                         print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : Finish (End Simulating)")
                         self.isStartSimulate = false
                         self.isInNetworkBadEntrance = false
@@ -2115,10 +2050,9 @@ public class ServiceManager: Observation {
                             let localTime: String = getLocalTimeString()
                             let log: String = localTime + " , (Jupiter) Error : UVD \(statusCode) " + returnedString
                             print(log)
-                            
+                            self.reporting(input: UVD_FLAG)
                             if (statusCode == 406) {
-                                self.reporting(input: UVD_FLAG)
-                                postReport(report: UVD_FLAG)
+                                
                             }
                         }
                     })
@@ -2161,10 +2095,20 @@ public class ServiceManager: Observation {
                         
                         if (self.isStartSimulate) {
                             if (accumulatedLength >= 40) {
+                                self.phase2ReqCount += 1
+                                if (self.phase2ReqCount > 3) {
+                                    let expandRange: Int = Int((accumulatedLength - 40)/2)
+                                    searchInfo.0 = [searchInfo.0[0]-expandRange, searchInfo.0[1]-expandRange, searchInfo.0[2]+expandRange, searchInfo.0[3]+expandRange]
+                                }
                                 processPhase2(currentTime: currentTime, localTime: localTime, userTrajectory: phase2Trajectory, searchInfo: searchInfo)
                             }
                         } else {
                             if (accumulatedLength >= 40) {
+                                self.phase2ReqCount += 1
+                                if (self.phase2ReqCount > 3) {
+                                    let expandRange: Int = Int((accumulatedLength - 40)/2)
+                                    searchInfo.0 = [searchInfo.0[0]-expandRange, searchInfo.0[1]-expandRange, searchInfo.0[2]+expandRange, searchInfo.0[3]+expandRange]
+                                }
                                 processPhase2(currentTime: currentTime, localTime: localTime, userTrajectory: phase2Trajectory, searchInfo: searchInfo)
                             }
                         }
@@ -2224,21 +2168,39 @@ public class ServiceManager: Observation {
         }
     }
     
-    func accumulateLengthAndRemoveOldest(isDetermineSpot: Bool, LENGTH_CONDITION: Double) {
+    func accumulateLengthAndRemoveOldest(isDetermineSpot: Bool, isMovePhase2To4: Bool, LENGTH_CONDITION: Double) {
         if (isDetermineSpot) {
             self.isDetermineSpot = false
             
             let newTraj = getTrajectoryFromLast(from: self.userTrajectoryInfo, N: 15)
             self.userTrajectoryInfo = newTraj
             self.accumulatedLengthWhenPhase2 = calculateAccumulatedLength(userTrajectory: self.userTrajectoryInfo)
-            self.phase2Count = 0
+            self.phase2ReqCount = 0
+            self.phase2BadCount = 0
             
             displayOutput.phase = String(2)
             self.phase = 2
             self.outputResult.phase = 2
         } else {
+            if (isMovePhase2To4) {
+                let isInLevelChangeArea = self.checkInLevelChangeArea(result: self.lastResult, mode: self.runMode)
+                if (isInLevelChangeArea && self.isNeedRemovePhase2To4Trajectroy) {
+                    self.isNeedRemovePhase2To4Trajectroy = false
+                    let newTraj = getTrajectoryFromLast(from: self.userTrajectoryInfo, N: 15)
+                    self.userTrajectoryInfo = newTraj
+                } else {
+                    let accumulatedLength = calculateAccumulatedLength(userTrajectory: self.userTrajectoryInfo)
+                    if accumulatedLength > LENGTH_CONDITION {
+                        self.userTrajectoryInfo.removeFirst()
+                    }
+                }
+            } else {
+                let accumulatedLength = calculateAccumulatedLength(userTrajectory: self.userTrajectoryInfo)
+                if accumulatedLength > LENGTH_CONDITION {
+                    self.userTrajectoryInfo.removeFirst()
+                }
+            }
             let accumulatedLength = calculateAccumulatedLength(userTrajectory: self.userTrajectoryInfo)
-            
             if accumulatedLength > LENGTH_CONDITION {
                 self.userTrajectoryInfo.removeFirst()
             }
@@ -2246,7 +2208,7 @@ public class ServiceManager: Observation {
     }
     
     func accumulateDiagonalAndRemoveOldest(LENGTH_CONDITION: Double) {
-        let newTrajectoryInfo = checkDiagonal(userTrajectory: self.userTrajectoryInfo, DIAGONAL_CONDITION: LENGTH_CONDITION)
+        let newTrajectoryInfo = checkAccumulatedLength(userTrajectory: self.userTrajectoryInfo, LENGTH_CONDITION: LENGTH_CONDITION)
         self.userTrajectoryInfo = newTrajectoryInfo
     }
     
@@ -2410,23 +2372,24 @@ public class ServiceManager: Observation {
                     self.userTrajectory.userPmSuccess = isPmSuccess
                     
                     self.userTrajectoryInfo.append(self.userTrajectory)
-                    self.accumulateLengthAndRemoveOldest(isDetermineSpot: self.isDetermineSpot, LENGTH_CONDITION: self.USER_TRAJECTORY_LENGTH)
+                    self.accumulateLengthAndRemoveOldest(isDetermineSpot: self.isDetermineSpot, isMovePhase2To4: self.isMovePhase2To4, LENGTH_CONDITION: self.USER_TRAJECTORY_LENGTH)
                 }
             }
         }
     }
     
     
-    func makeSearchAreaAndDirection(userTrajectory: [TrajectoryInfo], pastUserTrajectory: [TrajectoryInfo], pastSearchDirection: Int, length: Double, diagonal: Double, mode: String, phase: Int, isKf: Bool, isPhaseBreak: Bool) -> ([Int], [Int], Int, Int) {
+    func makeSearchAreaAndDirection(userTrajectory: [TrajectoryInfo], pastUserTrajectory: [TrajectoryInfo], pastSearchDirection: Int, length: Double, diagonal: Double, mode: String, phase: Int, isKf: Bool, isPhaseBreak: Bool) -> ([Int], [Int], Int, Int, Double) {
         var resultRange: [Int] = []
         var resultDirection: [Int] = [0, 90, 180, 270]
         var tailIndex = 1
         var searchType = 0
+        var resultRatio: Double = 1.0
         
         var CONDITION: Double = USER_TRAJECTORY_LENGTH
         var accumulatedValue: Double = length
         if (mode == "pdr") {
-            CONDITION = USER_TRAJECTORY_DIAGONAL
+            CONDITION = USER_TRAJECTORY_DIAGONAL + 5
             accumulatedValue = diagonal
             
             if (!userTrajectory.isEmpty) {
@@ -2445,7 +2408,6 @@ public class ServiceManager: Observation {
                     let userH = userTrajectory[userTrajectory.count-1].userHeading
                     
                     var RANGE = CONDITION
-                    RANGE = CONDITION*0.55
                     
                     // Search Area
                     let areaMinMax: [Double] = [userX - RANGE, userY - RANGE, userX + RANGE, userY + RANGE]
@@ -2516,11 +2478,12 @@ public class ServiceManager: Observation {
             
                     let closestIndex = findClosestValueIndex(to: tailIndex, in: pastTrajIndex)
                     if let headingIndex = closestIndex {
-                        if (isStraight == 1) {
-                            resultDirection = [pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5]
-                        } else {
-                            resultDirection = [pastTrajHeading[headingIndex]-10, pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5, pastTrajHeading[headingIndex]+10]
-                        }
+//                        if (isStraight == 1) {
+//                            resultDirection = [pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5]
+//                        } else {
+//                            resultDirection = [pastTrajHeading[headingIndex]-10, pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5, pastTrajHeading[headingIndex]+10]
+//                        }
+                        resultDirection = [pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5]
                         
                         for i in 0..<resultDirection.count {
                             resultDirection[i] = Int(compensateHeading(heading: Double(resultDirection[i])))
@@ -2622,7 +2585,7 @@ public class ServiceManager: Observation {
                     
                 }
             } else {
-                tailIndex = self.preTailIndex
+                tailIndex = self.pastTailIndex
                 if (resultRange.isEmpty) {
                     if (self.preSearchRange.isEmpty) {
                         let areaMinMax = [10, 10, 90, 90]
@@ -2642,9 +2605,11 @@ public class ServiceManager: Observation {
             if (!userTrajectory.isEmpty) {
                 var uvHeading = [Double]()
                 var uvRawHeading = [Double]()
+                var uvRawLength = [Double]()
                 for value in userTrajectory {
                     uvHeading.append(compensateHeading(heading: value.heading))
                     uvRawHeading.append(value.heading)
+                    uvRawLength.append(value.length)
                 }
                 
                 if (phase != 2 && phase < 4) {
@@ -2659,7 +2624,7 @@ public class ServiceManager: Observation {
                         userY = self.phaseBreakResult.y
                     }
                     
-                    var RANGE = CONDITION*0.8
+                    var RANGE = CONDITION*1.2
                     
                     // Search Area
                     let areaMinMax: [Double] = [userX - RANGE, userY - RANGE, userX + RANGE, userY + RANGE]
@@ -2734,6 +2699,9 @@ public class ServiceManager: Observation {
                     displayOutput.searchType = -2
                     searchType = -2
                 } else if (phase == 2) {
+                    let userBuilding = userTrajectory[userTrajectory.count-1].userBuilding
+                    let userLevel = userTrajectory[userTrajectory.count-1].userLevel
+                    
                     tailIndex = userTrajectory[0].index
                     
                     let headInfo = userTrajectory[userTrajectory.count-1]
@@ -2768,6 +2736,19 @@ public class ServiceManager: Observation {
                         serverPhase2Range[3] = serverPhase2Range[3] + Int(diffLength/4)
                         
                         searchRange = serverPhase2Range
+                    }
+                    
+                    if (self.phase2ReqCount >= 3) {
+                        let centerPhase2Range: [Int] = [Int((self.phase2Range[2]-self.phase2Range[0])/2), Int((self.phase2Range[3]-self.phase2Range[1])/2)]
+                        
+                        var userX = userTrajectory[userTrajectory.count-1].userX
+                        var userY = userTrajectory[userTrajectory.count-1].userY
+                        let diffXy: [Int] = [Int(userX) - centerPhase2Range[0], Int(userY) - centerPhase2Range[1]]
+                        
+                        searchRange[0] = searchRange[0] + diffXy[0]
+                        searchRange[1] = searchRange[1] + diffXy[1]
+                        searchRange[2] = searchRange[2] + diffXy[0]
+                        searchRange[3] = searchRange[3] + diffXy[1]
                     }
                     
                     // Add
@@ -3103,8 +3084,11 @@ public class ServiceManager: Observation {
                         resultRange = [self.preSearchRange[0] - rangeConstant, self.preSearchRange[1] - rangeConstant, self.preSearchRange[2] + rangeConstant, self.preSearchRange[3] + rangeConstant]
                     }
                 }
+                
+                
+                
             } else {
-                tailIndex = self.preTailIndex
+                tailIndex = self.pastTailIndex
                 if (resultRange.isEmpty) {
                     if (self.preSearchRange.isEmpty) {
                         let areaMinMax = [10, 10, 90, 90]
@@ -3121,7 +3105,9 @@ public class ServiceManager: Observation {
             }
         }
         
-        return (resultRange, resultDirection, tailIndex, searchType)
+//        resultRange = convertToValidSearchRange(inputRange: resultRange, pathPointMinMax: self.PathPointMinMax)
+        
+        return (resultRange, resultDirection, tailIndex, searchType, resultRatio)
     }
     
     func isTrajectoryStraight(for array: [Double], size: Int, mode: String) -> Int {
@@ -3162,8 +3148,9 @@ public class ServiceManager: Observation {
     }
     
     func isDrBufferStraight(drBuffer: [UnitDRInfo]) -> Bool {
-        if (drBuffer.count >= DR_BUFFER_SIZE) {
-            let firstHeading: Double = drBuffer[0].heading
+        if (drBuffer.count >= DR_BUFFER_SIZE_FOR_STRAIGHT) {
+            let firstIndex = drBuffer.count-DR_BUFFER_SIZE_FOR_STRAIGHT
+            let firstHeading: Double = drBuffer[firstIndex].heading
             let lastHeading: Double = drBuffer[drBuffer.count-1].heading
             var diffHeading: Double = abs(lastHeading - firstHeading)
             if (diffHeading >= 270 && diffHeading < 360) {
@@ -3190,9 +3177,9 @@ public class ServiceManager: Observation {
         
         var lengthCondition = USER_TRAJECTORY_LENGTH
         if (mode == "pdr") {
-            lengthCondition = USER_TRAJECTORY_DIAGONAL*0.6
+            lengthCondition = USER_TRAJECTORY_DIAGONAL
         }
-        let SEARCH_LENGTH: Double = lengthCondition*0.3
+        let SEARCH_LENGTH: Double = lengthCondition*0.4
         
         let headingStart = heading[0]
         let headingEnd = heading[1]
@@ -3314,13 +3301,25 @@ public class ServiceManager: Observation {
         return areaMinMax
     }
     
-    private func processPhase2(currentTime: Int, localTime: String, userTrajectory: [TrajectoryInfo], searchInfo: ([Int], [Int], Int, Int)) {
+    private func processPhase2(currentTime: Int, localTime: String, userTrajectory: [TrajectoryInfo], searchInfo: ([Int], [Int], Int, Int, Double)) {
         let localTime = getLocalTimeString()
     
         var requestScArray: [Double] = [self.scCompensation]
         
         if (self.runMode == "pdr") {
             requestScArray = [1.0]
+            let accumulatedDiagnoal = calculateAccumulatedDiagonal(userTrajectory: userTrajectory)
+            if (accumulatedDiagnoal < USER_TRAJECTORY_DIAGONAL/2) {
+                requestScArray = [1.01]
+            } else {
+                if (self.isScRequested) {
+                    requestScArray = [1.01]
+                } else {
+                    requestScArray = self.scCompensationArray
+                    self.scRequestTime = currentTime
+                    self.isScRequested = true
+                }
+            }
         } else {
             let accumulatedLength = calculateAccumulatedLength(userTrajectory: userTrajectory)
             if (accumulatedLength < USER_TRAJECTORY_LENGTH/2) {
@@ -3335,11 +3334,9 @@ public class ServiceManager: Observation {
                 }
             }
         }
-        
-        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name_list: [self.currentLevel], spot_id: self.currentSpot, phase: 2, search_range: searchInfo.0, search_direction_list: searchInfo.1, rss_compensation_list: [self.rssiBias], sc_compensation_list: requestScArray, tail_index: searchInfo.2)
-        
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name_list: [self.currentLevel], phase: 2, search_range: searchInfo.0, search_direction_list: searchInfo.1, normalization_scale: self.normalizationScale, device_min_rss: Int(self.deviceMinRss), sc_compensation_list: requestScArray, tail_index: searchInfo.2)
         self.networkCount += 1
-        NetworkManager.shared.postFLT(url: FLT_URL, input: input, isSufficientRfd: self.isSufficientRfd, completion: { [self] statusCode, returnedString, rfdCondition in
+        NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString, inputPhase in
             if (!returnedString.contains("timed out")) {
                 self.networkCount = 0
             }
@@ -3394,7 +3391,7 @@ public class ServiceManager: Observation {
                         }
                         resultCorrected.1[2] = compensateHeading(heading: resultCorrected.1[2])
                         
-                        if (result.phase == 2 && result.scc < 0.4) {
+                        if (result.phase == 2 && result.scc < 0.25) {
                             self.isNeedTrajInit = true
                             self.phase = 1
                             if (self.isActiveKf) {
@@ -3402,19 +3399,20 @@ public class ServiceManager: Observation {
                             }
                         } else if (result.phase == 2) {
                             if (result.scc < SCC_FOR_PHASE4) {
-                                self.phase2Count += 1
-                                if (self.phase2Count > 3) {
+                                self.phase2BadCount += 1
+                                if (self.phase2BadCount > 6) {
                                     self.isNeedTrajInit = true
                                     self.phase = 1
                                     if (self.isActiveKf) {
                                         self.isPhaseBreak = true
                                     }
-                                    self.phase2Count = 0
+                                    self.phase2BadCount = 0
                                 }
                             }
                         } else {
                             if (result.phase == 4) {
                                 if (!self.isActiveKf) {
+                                    // 최초 Phase 2-> 4 진입
                                     if (self.isIndoor) {
                                         let outputBuilding = self.outputResult.building_name
                                         let outputLevel = self.outputResult.level_name
@@ -3433,36 +3431,206 @@ public class ServiceManager: Observation {
                                         self.isStartKf = true
                                     }
                                     
-                                    self.timeUpdatePosition.x = resultCorrected.1[0]
-                                    self.timeUpdatePosition.y = resultCorrected.1[1]
-                                    self.timeUpdatePosition.heading = resultHeading
-                                    self.updateHeading = resultHeading
+                                    let propagationResult = propagateUsingUvd(drBuffer: self.unitDrBuffer, result: result)
+                                    let propagationValues: [Double] = propagationResult.1
+                                    if (propagationResult.0) {
+                                        var propagatedResult: [Double] = [resultCorrected.1[0]+propagationValues[0] , resultCorrected.1[1]+propagationValues[1], resultCorrected.1[2]+propagationValues[2]]
+                                        let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propagatedResult[0], y: propagatedResult[1], heading: propagatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
+                                        propagatedResult = pathMatchingResult.xyh
+                                        propagatedResult[2] = compensateHeading(heading: propagatedResult[2])
+                                        
+                                        self.timeUpdatePosition.x = propagatedResult[0]
+                                        self.timeUpdatePosition.y = propagatedResult[1]
+                                        self.timeUpdatePosition.heading = propagatedResult[2]
+                                        self.updateHeading = propagatedResult[2]
 
-                                    self.timeUpdateOutput.x = resultCorrected.1[0]
-                                    self.timeUpdateOutput.y = resultCorrected.1[1]
-                                    self.timeUpdateOutput.absolute_heading = resultHeading
+                                        self.timeUpdateOutput.x = propagatedResult[0]
+                                        self.timeUpdateOutput.y = propagatedResult[1]
+                                        self.timeUpdateOutput.absolute_heading = propagatedResult[2]
 
-                                    self.measurementPosition.x = resultCorrected.1[0]
-                                    self.measurementPosition.y = resultCorrected.1[1]
-                                    self.measurementPosition.heading = resultHeading
+                                        self.measurementPosition.x = propagatedResult[0]
+                                        self.measurementPosition.y = propagatedResult[1]
+                                        self.measurementPosition.heading = propagatedResult[2]
 
-                                    self.measurementOutput.x = resultCorrected.1[0]
-                                    self.measurementOutput.y = resultCorrected.1[1]
-                                    self.measurementOutput.absolute_heading = resultHeading
+                                        self.measurementOutput.x = propagatedResult[0]
+                                        self.measurementOutput.y = propagatedResult[1]
+                                        self.measurementOutput.absolute_heading = propagatedResult[2]
 
-                                    self.outputResult.x = resultCorrected.1[0]
-                                    self.outputResult.y = resultCorrected.1[1]
-                                    self.outputResult.absolute_heading = resultHeading
-                                    
-                                    if (self.isStartSimulate) {
-                                        self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+                                        self.outputResult.x = propagatedResult[0]
+                                        self.outputResult.y = propagatedResult[1]
+                                        self.outputResult.absolute_heading = propagatedResult[2]
                                     } else {
-                                        self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+                                        self.timeUpdatePosition.x = resultCorrected.1[0]
+                                        self.timeUpdatePosition.y = resultCorrected.1[1]
+                                        self.timeUpdatePosition.heading = resultHeading
+                                        self.updateHeading = resultHeading
+
+                                        self.timeUpdateOutput.x = resultCorrected.1[0]
+                                        self.timeUpdateOutput.y = resultCorrected.1[1]
+                                        self.timeUpdateOutput.absolute_heading = resultHeading
+
+                                        self.measurementPosition.x = resultCorrected.1[0]
+                                        self.measurementPosition.y = resultCorrected.1[1]
+                                        self.measurementPosition.heading = resultHeading
+
+                                        self.measurementOutput.x = resultCorrected.1[0]
+                                        self.measurementOutput.y = resultCorrected.1[1]
+                                        self.measurementOutput.absolute_heading = resultHeading
+
+                                        self.outputResult.x = resultCorrected.1[0]
+                                        self.outputResult.y = resultCorrected.1[1]
+                                        self.outputResult.absolute_heading = resultHeading
+                                    }
+                                    self.phase2BadCount = 0
+                                    self.isMovePhase2To4 = true
+                                } else {
+                                    //
+                                    let trajLength = calculateAccumulatedLength(userTrajectory: self.userTrajectoryInfo)
+                                    if (result.scc > 0.6) {
+                                        let propagationResult = propagateUsingUvd(drBuffer: self.unitDrBuffer, result: result)
+                                        let propagationValues: [Double] = propagationResult.1
+                                        if (propagationResult.0) {
+                                            var propgatedResult: [Double] = [resultCorrected.1[0]+propagationValues[0] , resultCorrected.1[1]+propagationValues[1], resultCorrected.1[2]+propagationValues[2]]
+                                            if (self.runMode == "pdr") {
+                                                let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propgatedResult[0], y: propgatedResult[1], heading: propgatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 0)
+                                                propgatedResult = pathMatchingResult.xyh
+                                            } else {
+                                                let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propgatedResult[0], y: propgatedResult[1], heading: propgatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
+                                                propgatedResult = pathMatchingResult.xyh
+                                            }
+                                            propgatedResult[2] = compensateHeading(heading: propgatedResult[2])
+                                            
+                                            self.timeUpdatePosition.x = propgatedResult[0]
+                                            self.timeUpdatePosition.y = propgatedResult[1]
+
+                                            self.timeUpdateOutput.x = propgatedResult[0]
+                                            self.timeUpdateOutput.y = propgatedResult[1]
+
+                                            self.measurementPosition.x = propgatedResult[0]
+                                            self.measurementPosition.y = propgatedResult[1]
+
+                                            self.measurementOutput.x = propgatedResult[0]
+                                            self.measurementOutput.y = propgatedResult[1]
+
+                                            self.outputResult.x = propgatedResult[0]
+                                            self.outputResult.y = propgatedResult[1]
+                                            
+                                            if (trajLength >= USER_TRAJECTORY_LENGTH*0.6) {
+                                                self.updateHeading = propgatedResult[2]
+                                                self.timeUpdatePosition.heading = propgatedResult[2]
+                                                self.timeUpdateOutput.absolute_heading = propgatedResult[2]
+                                                self.measurementPosition.heading = propgatedResult[2]
+                                                self.measurementOutput.absolute_heading = propgatedResult[2]
+                                                self.outputResult.absolute_heading = propgatedResult[2]
+                                            }
+                                        } else {
+                                            self.timeUpdatePosition.x = resultCorrected.1[0]
+                                            self.timeUpdatePosition.y = resultCorrected.1[1]
+
+                                            self.timeUpdateOutput.x = resultCorrected.1[0]
+                                            self.timeUpdateOutput.y = resultCorrected.1[1]
+
+                                            self.measurementPosition.x = resultCorrected.1[0]
+                                            self.measurementPosition.y = resultCorrected.1[1]
+
+                                            self.measurementOutput.x = resultCorrected.1[0]
+                                            self.measurementOutput.y = resultCorrected.1[1]
+
+                                            self.outputResult.x = resultCorrected.1[0]
+                                            self.outputResult.y = resultCorrected.1[1]
+                                            
+                                            if (trajLength >= USER_TRAJECTORY_LENGTH*0.6) {
+                                                self.updateHeading = resultCorrected.1[2]
+                                                self.timeUpdatePosition.heading = resultCorrected.1[2]
+                                                self.timeUpdateOutput.absolute_heading = resultCorrected.1[2]
+                                                self.measurementPosition.heading = resultCorrected.1[2]
+                                                self.measurementOutput.absolute_heading = resultCorrected.1[2]
+                                                self.outputResult.absolute_heading = resultCorrected.1[2]
+                                            }
+                                        }
                                     }
                                 }
-                                self.phase2Count = 0
-                                self.isMovePhase2To4 = true
-                                self.isEnterPhase2 = true
+                                
+                                // 기존
+//                                if (!self.isActiveKf) {
+//                                    if (self.isIndoor) {
+//                                        let outputBuilding = self.outputResult.building_name
+//                                        let outputLevel = self.outputResult.level_name
+//                                        let outputPhase = self.outputResult.phase
+//
+//                                        self.timeUpdateOutput.building_name = outputBuilding
+//                                        self.timeUpdateOutput.level_name = outputLevel
+//                                        self.timeUpdateOutput.phase = outputPhase
+//
+//                                        self.measurementOutput.building_name = outputBuilding
+//                                        self.measurementOutput.level_name = outputLevel
+//                                        self.measurementOutput.phase = outputPhase
+//
+//                                        self.isActiveKf = true
+//                                        self.timeUpdateFlag = true
+//                                        self.isStartKf = true
+//                                    }
+//
+//                                    let propagationResult = propagateUsingUvd(drBuffer: self.unitDrBuffer, result: result)
+//                                    let propagationValues: [Double] = propagationResult.1
+//                                    if (propagationResult.0) {
+//                                        var propagatedResult: [Double] = [resultCorrected.1[0]+propagationValues[0] , resultCorrected.1[1]+propagationValues[1], resultCorrected.1[2]+propagationValues[2]]
+//                                        let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propagatedResult[0], y: propagatedResult[1], heading: propagatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
+//                                        propagatedResult = pathMatchingResult.xyh
+//                                        propagatedResult[2] = compensateHeading(heading: propagatedResult[2])
+//
+//                                        self.timeUpdatePosition.x = propagatedResult[0]
+//                                        self.timeUpdatePosition.y = propagatedResult[1]
+//                                        self.timeUpdatePosition.heading = propagatedResult[2]
+//                                        self.updateHeading = propagatedResult[2]
+//
+//                                        self.timeUpdateOutput.x = propagatedResult[0]
+//                                        self.timeUpdateOutput.y = propagatedResult[1]
+//                                        self.timeUpdateOutput.absolute_heading = propagatedResult[2]
+//
+//                                        self.measurementPosition.x = propagatedResult[0]
+//                                        self.measurementPosition.y = propagatedResult[1]
+//                                        self.measurementPosition.heading = propagatedResult[2]
+//
+//                                        self.measurementOutput.x = propagatedResult[0]
+//                                        self.measurementOutput.y = propagatedResult[1]
+//                                        self.measurementOutput.absolute_heading = propagatedResult[2]
+//
+//                                        self.outputResult.x = propagatedResult[0]
+//                                        self.outputResult.y = propagatedResult[1]
+//                                        self.outputResult.absolute_heading = propagatedResult[2]
+//                                    } else {
+//                                        self.timeUpdatePosition.x = resultCorrected.1[0]
+//                                        self.timeUpdatePosition.y = resultCorrected.1[1]
+//                                        self.timeUpdatePosition.heading = resultHeading
+//                                        self.updateHeading = resultHeading
+//
+//                                        self.timeUpdateOutput.x = resultCorrected.1[0]
+//                                        self.timeUpdateOutput.y = resultCorrected.1[1]
+//                                        self.timeUpdateOutput.absolute_heading = resultHeading
+//
+//                                        self.measurementPosition.x = resultCorrected.1[0]
+//                                        self.measurementPosition.y = resultCorrected.1[1]
+//                                        self.measurementPosition.heading = resultHeading
+//
+//                                        self.measurementOutput.x = resultCorrected.1[0]
+//                                        self.measurementOutput.y = resultCorrected.1[1]
+//                                        self.measurementOutput.absolute_heading = resultHeading
+//
+//                                        self.outputResult.x = resultCorrected.1[0]
+//                                        self.outputResult.y = resultCorrected.1[1]
+//                                        self.outputResult.absolute_heading = resultHeading
+//                                    }
+//
+//
+//                                    if (self.isStartSimulate) {
+//                                        self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+//                                    } else {
+//                                        self.resultToReturn = self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
+//                                    }
+//                                }
+//                                self.phase2BadCount = 0
+//                                self.isMovePhase2To4 = true
                             }
                             
                             if (self.currentLevel == "0F") {
@@ -3480,40 +3648,79 @@ public class ServiceManager: Observation {
                         self.serverResult[2] = result.absolute_heading
                         
                         
-                        if (!self.isActiveKf) {
-                            self.outputResult.x = resultCorrected.1[0]
-                            self.outputResult.y = resultCorrected.1[1]
-                            self.outputResult.absolute_heading = resultCorrected.1[2]
-                        } else {
-                            let trajLength = calculateAccumulatedLength(userTrajectory: self.userTrajectoryInfo)
-                            if (result.scc > 0.6) {
-                                self.timeUpdatePosition.x = resultCorrected.1[0]
-                                self.timeUpdatePosition.y = resultCorrected.1[1]
-
-                                self.timeUpdateOutput.x = resultCorrected.1[0]
-                                self.timeUpdateOutput.y = resultCorrected.1[1]
-
-                                self.measurementPosition.x = resultCorrected.1[0]
-                                self.measurementPosition.y = resultCorrected.1[1]
-
-                                self.measurementOutput.x = resultCorrected.1[0]
-                                self.measurementOutput.y = resultCorrected.1[1]
-                                
-                                self.outputResult.x = resultCorrected.1[0]
-                                self.outputResult.y = resultCorrected.1[1]
-                                
-                                if (trajLength >= USER_TRAJECTORY_LENGTH*0.6) {
-                                    self.timeUpdatePosition.heading = resultCorrected.1[2]
-                                    self.timeUpdateOutput.absolute_heading = resultCorrected.1[2]
-                                    self.measurementPosition.heading = resultCorrected.1[2]
-                                    self.measurementOutput.absolute_heading = resultCorrected.1[2]
-                                    self.outputResult.absolute_heading = resultCorrected.1[2]
-                                }
-                            }
-                        }
+//                        if (!self.isActiveKf) {
+//                            self.outputResult.x = resultCorrected.1[0]
+//                            self.outputResult.y = resultCorrected.1[1]
+//                            self.outputResult.absolute_heading = resultCorrected.1[2]
+//                        } else {
+//                            let trajLength = calculateAccumulatedLength(userTrajectory: self.userTrajectoryInfo)
+//                            if (result.scc > 0.6) {
+//                                let propagationResult = propagateUsingUvd(drBuffer: self.unitDrBuffer, result: result)
+//                                let propagationValues: [Double] = propagationResult.1
+//                                if (propagationResult.0) {
+//                                    var propgatedResult: [Double] = [resultCorrected.1[0]+propagationValues[0] , resultCorrected.1[1]+propagationValues[1], resultCorrected.1[2]+propagationValues[2]]
+//                                    if (self.runMode == "pdr") {
+//                                        let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propgatedResult[0], y: propgatedResult[1], heading: propgatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 0)
+//                                        propgatedResult = pathMatchingResult.xyh
+//                                    } else {
+//                                        let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propgatedResult[0], y: propgatedResult[1], heading: propgatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
+//                                        propgatedResult = pathMatchingResult.xyh
+//                                    }
+//                                    propgatedResult[2] = compensateHeading(heading: propgatedResult[2])
+//
+//                                    self.timeUpdatePosition.x = propgatedResult[0]
+//                                    self.timeUpdatePosition.y = propgatedResult[1]
+//
+//                                    self.timeUpdateOutput.x = propgatedResult[0]
+//                                    self.timeUpdateOutput.y = propgatedResult[1]
+//
+//                                    self.measurementPosition.x = propgatedResult[0]
+//                                    self.measurementPosition.y = propgatedResult[1]
+//
+//                                    self.measurementOutput.x = propgatedResult[0]
+//                                    self.measurementOutput.y = propgatedResult[1]
+//
+//                                    self.outputResult.x = propgatedResult[0]
+//                                    self.outputResult.y = propgatedResult[1]
+//
+//                                    if (trajLength >= USER_TRAJECTORY_LENGTH*0.6) {
+//                                        self.updateHeading = propgatedResult[2]
+//                                        self.timeUpdatePosition.heading = propgatedResult[2]
+//                                        self.timeUpdateOutput.absolute_heading = propgatedResult[2]
+//                                        self.measurementPosition.heading = propgatedResult[2]
+//                                        self.measurementOutput.absolute_heading = propgatedResult[2]
+//                                        self.outputResult.absolute_heading = propgatedResult[2]
+//                                    }
+//                                } else {
+//                                    self.timeUpdatePosition.x = resultCorrected.1[0]
+//                                    self.timeUpdatePosition.y = resultCorrected.1[1]
+//
+//                                    self.timeUpdateOutput.x = resultCorrected.1[0]
+//                                    self.timeUpdateOutput.y = resultCorrected.1[1]
+//
+//                                    self.measurementPosition.x = resultCorrected.1[0]
+//                                    self.measurementPosition.y = resultCorrected.1[1]
+//
+//                                    self.measurementOutput.x = resultCorrected.1[0]
+//                                    self.measurementOutput.y = resultCorrected.1[1]
+//
+//                                    self.outputResult.x = resultCorrected.1[0]
+//                                    self.outputResult.y = resultCorrected.1[1]
+//
+//                                    if (trajLength >= USER_TRAJECTORY_LENGTH*0.6) {
+//                                        self.updateHeading = resultCorrected.1[2]
+//                                        self.timeUpdatePosition.heading = resultCorrected.1[2]
+//                                        self.timeUpdateOutput.absolute_heading = resultCorrected.1[2]
+//                                        self.measurementPosition.heading = resultCorrected.1[2]
+//                                        self.measurementOutput.absolute_heading = resultCorrected.1[2]
+//                                        self.outputResult.absolute_heading = resultCorrected.1[2]
+//                                    }
+//                                }
+//                            }
+//                        }
                         
                         self.outputResult.scc = result.scc
-                        self.outputResult.phase = result.phase
+                        self.outputResult.phase = self.phase
                         if (self.isStartSimulate) {
                             self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
                         } else {
@@ -3533,9 +3740,40 @@ public class ServiceManager: Observation {
         })
     }
     
-    private func processPhase3(currentTime: Int, localTime: String, userTrajectory: [TrajectoryInfo], searchInfo: ([Int], [Int], Int, Int)) {
+    private func processPhase3(currentTime: Int, localTime: String, userTrajectory: [TrajectoryInfo], searchInfo: ([Int], [Int], Int, Int, Double)) {
         let localTime = getLocalTimeString()
         self.isSufficientRfd = checkSufficientRfd(userTrajectory: userTrajectory)
+        
+        var requestScArray: [Double] = [self.scCompensation]
+        if (self.runMode == "pdr") {
+            requestScArray = [1.0]
+            let accumulatedDiagnoal = calculateAccumulatedDiagonal(userTrajectory: userTrajectory)
+            if (accumulatedDiagnoal < USER_TRAJECTORY_DIAGONAL/2) {
+                requestScArray = [1.01]
+            } else {
+                if (self.isScRequested) {
+                    requestScArray = [1.01]
+                } else {
+                    requestScArray = [0.9, 1.0]
+                    self.scRequestTime = currentTime
+                    self.isScRequested = true
+                }
+            }
+        } else {
+            let accumulatedLength = calculateAccumulatedLength(userTrajectory: userTrajectory)
+            if (accumulatedLength < accumulatedLength/2) {
+                requestScArray = [1.01]
+            } else {
+                if (self.isScRequested) {
+                    requestScArray = [1.01]
+                } else {
+                    requestScArray = [0.8, 1.0]
+//                    requestScArray = [1.01]
+                    self.scRequestTime = currentTime
+                    self.isScRequested = true
+                }
+            }
+        }
         
         if (self.runMode == "pdr") {
             self.currentLevel = removeLevelDirectionString(levelName: self.currentLevel)
@@ -3544,76 +3782,39 @@ public class ServiceManager: Observation {
         let isInLevelChangeArea = self.checkInLevelChangeArea(result: self.lastResult, mode: self.runMode)
         if (isInLevelChangeArea) {
             levelArray = self.makeLevelChangeArray(buildingName: self.currentBuilding, levelName: self.currentLevel, buildingLevel: self.buildingsAndLevels)
-            self.isPossibleEstBias = false
         }
         
-        // Bias Estimation
-        var requestBiasArray: [Int] = [self.rssiBias]
-        if (self.isBiasConverged) {
-            requestBiasArray = [self.rssiBias]
-            self.isBiasRequested = false
-        } else {
-            if (self.isPossibleEstBias) {
-                if (self.isBiasRequested) {
-                    requestBiasArray = [self.rssiBias]
-                } else {
-                    if (!self.isActiveKf && self.isSufficientRfd) {
-                        requestBiasArray = self.rssiBiasArray
-                        self.biasRequestTime = currentTime
-                        self.isBiasRequested = true
-                    } else if (self.phase > 2 && self.isSufficientRfd) {
-                        requestBiasArray = self.rssiBiasArray
-                        self.biasRequestTime = currentTime
-                        self.isBiasRequested = true
-                    } else {
-                        requestBiasArray = [self.rssiBias]
-                    }
-                }
-            }
-        }
-        
-        self.phase2Count = 0
-        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name_list: levelArray, spot_id: self.currentSpot, phase: self.phase, search_range: searchInfo.0, search_direction_list: searchInfo.1, rss_compensation_list: requestBiasArray, sc_compensation_list: [1.0], tail_index: searchInfo.2)
+        self.phase2BadCount = 0
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name_list: levelArray, phase: self.phase, search_range: searchInfo.0, search_direction_list: searchInfo.1, normalization_scale: self.normalizationScale, device_min_rss: Int(self.deviceMinRss), sc_compensation_list: requestScArray, tail_index: searchInfo.2)
         self.networkCount += 1
         
-        NetworkManager.shared.postFLT(url: FLT_URL, input: input, isSufficientRfd: self.isSufficientRfd, completion: { [self] statusCode, returnedString, rfdCondition in
+        NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString, inputPhase in
             if (!returnedString.contains("timed out")) {
                 self.networkCount = 0
             }
             if (statusCode == 200) {
                 let result = jsonToResult(json: returnedString)
                 if (result.x != 0 && result.y != 0) {
-                    if (self.isBiasRequested) {
-                        let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
-                        if (biasCheckTime < 100) {
-                            let resultEstRssiBias = biasEstimator.estimateRssiBias(sccResult: result.scc, biasResult: result.rss_compensation, biasArray: self.rssiBiasArray)
-                            self.rssiBias = result.rss_compensation
-                            let newBiasArray: [Int] = resultEstRssiBias.1
-                            self.rssiBiasArray = newBiasArray
-                            
-                            if (resultEstRssiBias.0) {
-                                self.sccGoodBiasArray.append(result.rss_compensation)
-                                if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
-                                    let biasAvg = biasEstimator.averageBiasArray(biasArray: self.sccGoodBiasArray)
-                                    self.sccGoodBiasArray.remove(at: 0)
-                                    self.rssiBias = biasAvg.0
-                                    self.isBiasConverged = biasAvg.1
-                                    if (!biasAvg.1) {
-                                        self.sccGoodBiasArray = [Int]()
-                                    }
-                                    
-                                    biasEstimator.saveRssiBias(bias: self.rssiBias, biasArray: self.sccGoodBiasArray, isConverged: self.isBiasConverged, sector_id: self.sector_id)
-                                    if (self.isBiasConverged) {
-                                        self.postRssiBias(sector_id: self.sector_id, bias: self.rssiBias)
-                                    }
+                    if (self.isScRequested) {
+                        let compensationCheckTime = abs(result.mobile_time - self.scRequestTime)
+                        if (compensationCheckTime < 100) {
+                            if (result.scc < 0.55) {
+                                self.scCompensationBadCount += 1
+                            } else {
+                                if (result.scc > 0.7) {
+                                    self.scCompensation = result.sc_compensation
                                 }
+                                self.scCompensationBadCount = 0
                             }
                             
-                            self.isBiasRequested = false
-                            displayOutput.bias = self.rssiBias
-                            displayOutput.isConverged = self.isBiasConverged
-                        } else if (biasCheckTime > 3000) {
-                            self.isBiasRequested = false
+                            if (self.scCompensationBadCount > 1) {
+                                self.scCompensationBadCount = 0
+                                let resultEstScCompensation = estimateScCompensation(sccResult: result.scc, scResult: result.sc_compensation, scArray: self.scCompensationArray)
+                                self.scCompensationArray = resultEstScCompensation
+                                self.isScRequested = false
+                            }
+                        } else if (compensationCheckTime > 3000) {
+                            self.isScRequested = false
                         }
                     }
                     
@@ -3641,27 +3842,18 @@ public class ServiceManager: Observation {
                                     self.isGetFirstResponse = true
                                     self.isIndoor = true
                                     self.reporting(input: INDOOR_FLAG)
-                                    postReport(report: INDOOR_FLAG)
                                 } else {
                                     // Add
                                     for i in 0..<self.EntranceNumbers {
                                         if (!self.isStartSimulate) {
                                             let entranceResult = self.findEntrance(result: result, entrance: i)
-                                            print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : findEntrance = \(entranceResult)")
                                             if (entranceResult.0 != 0) {
                                                 let velocityScale: Double = self.EntranceVelocityScale[i]
-                                                print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : number = \(entranceResult.0)")
-                                                print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : scale = \(velocityScale)")
                                                 // 입구 탐지 !
                                                 self.currentEntrance = "\(result.building_name)_\(result.level_name)_\(entranceResult.0)"
                                                 self.currentEntranceLength = entranceResult.1
                                                 self.entranceVelocityScale = velocityScale
-                                                
                                                 self.isGetFirstResponse = true
-                                                self.isIndoor = true
-                                                self.reporting(input: INDOOR_FLAG)
-                                                postReport(report: INDOOR_FLAG)
-                                                
                                                 self.isStartSimulate = true
                                             }
                                         }
@@ -3672,17 +3864,6 @@ public class ServiceManager: Observation {
                         
                         if (result.phase == 1) {
                             self.isNeedTrajInit = true
-                        }
-                        
-                        // Check Bias Re-estimation is needed
-                        if (self.isBiasConverged) {
-                            if (result.scc < 0.5) {
-                                self.sccBadCount += 1
-                                if (self.sccBadCount > 3) {
-                                    reEstimateRssiBias()
-                                    self.sccBadCount = 0
-                                }
-                            }
                         }
                         
                         self.pastSearchDirection = result.search_direction
@@ -3725,26 +3906,61 @@ public class ServiceManager: Observation {
                             }
                             
                             if (result.phase == 4) {
-                                self.timeUpdatePosition.x = resultCorrected.1[0]
-                                self.timeUpdatePosition.y = resultCorrected.1[1]
-                                self.timeUpdatePosition.heading = compensateHeading(heading: result.absolute_heading)
-                                self.updateHeading = compensateHeading(heading: result.absolute_heading)
-                                
-                                self.timeUpdateOutput.x = resultCorrected.1[0]
-                                self.timeUpdateOutput.y = resultCorrected.1[1]
-                                self.timeUpdateOutput.absolute_heading = compensateHeading(heading: result.absolute_heading)
-                                
-                                self.measurementPosition.x = resultCorrected.1[0]
-                                self.measurementPosition.y = resultCorrected.1[1]
-                                self.measurementPosition.heading = compensateHeading(heading: result.absolute_heading)
-                                
-                                self.measurementOutput.x = resultCorrected.1[0]
-                                self.measurementOutput.y = resultCorrected.1[1]
-                                self.measurementOutput.absolute_heading = compensateHeading(heading: result.absolute_heading)
-                                
-                                self.outputResult.x = resultCorrected.1[0]
-                                self.outputResult.y = resultCorrected.1[1]
-                                self.outputResult.absolute_heading = compensateHeading(heading: result.absolute_heading)
+                                let propagationResult = propagateUsingUvd(drBuffer: self.unitDrBuffer, result: result)
+                                var propagationValues: [Double] = propagationResult.1
+                                if (propagationResult.0) {
+                                    var propagatedResult: [Double] = [resultCorrected.1[0]+propagationValues[0] , resultCorrected.1[1]+propagationValues[1], resultCorrected.1[2]+propagationValues[2]]
+                                    if (self.runMode == "pdr") {
+                                        let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propagatedResult[0], y: propagatedResult[1], heading: propagatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 0)
+                                        propagatedResult = pathMatchingResult.xyh
+                                    } else {
+                                        let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propagatedResult[0], y: propagatedResult[1], heading: propagatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
+                                        propagatedResult = pathMatchingResult.xyh
+                                    }
+                                    propagatedResult[2] = compensateHeading(heading: propagatedResult[2])
+                                    
+                                    self.timeUpdatePosition.x = propagatedResult[0]
+                                    self.timeUpdatePosition.y = propagatedResult[1]
+                                    self.timeUpdatePosition.heading = propagatedResult[2]
+                                    self.updateHeading = propagatedResult[2]
+
+                                    self.timeUpdateOutput.x = propagatedResult[0]
+                                    self.timeUpdateOutput.y = propagatedResult[1]
+                                    self.timeUpdateOutput.absolute_heading = propagatedResult[2]
+
+                                    self.measurementPosition.x = propagatedResult[0]
+                                    self.measurementPosition.y = propagatedResult[1]
+                                    self.measurementPosition.heading = propagatedResult[2]
+
+                                    self.measurementOutput.x = propagatedResult[0]
+                                    self.measurementOutput.y = propagatedResult[1]
+                                    self.measurementOutput.absolute_heading = propagatedResult[2]
+
+                                    self.outputResult.x = propagatedResult[0]
+                                    self.outputResult.y = propagatedResult[1]
+                                    self.outputResult.absolute_heading = propagatedResult[2]
+                                } else {
+                                    self.timeUpdatePosition.x = resultCorrected.1[0]
+                                    self.timeUpdatePosition.y = resultCorrected.1[1]
+                                    self.timeUpdatePosition.heading = result.absolute_heading
+                                    self.updateHeading = result.absolute_heading
+
+                                    self.timeUpdateOutput.x = resultCorrected.1[0]
+                                    self.timeUpdateOutput.y = resultCorrected.1[1]
+                                    self.timeUpdateOutput.absolute_heading = result.absolute_heading
+
+                                    self.measurementPosition.x = resultCorrected.1[0]
+                                    self.measurementPosition.y = resultCorrected.1[1]
+                                    self.measurementPosition.heading = result.absolute_heading
+
+                                    self.measurementOutput.x = resultCorrected.1[0]
+                                    self.measurementOutput.y = resultCorrected.1[1]
+                                    self.measurementOutput.absolute_heading = result.absolute_heading
+
+                                    self.outputResult.x = resultCorrected.1[0]
+                                    self.outputResult.y = resultCorrected.1[1]
+                                    self.outputResult.absolute_heading = result.absolute_heading
+                                }
                                 
                                 if (self.isStartSimulate) {
                                     self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
@@ -3791,10 +4007,28 @@ public class ServiceManager: Observation {
                         } else {
                             // Kalman Filter가 동작 중이면서 위치 요청시 input의 phase 가 1~3 인 경우
                             self.phaseBreakResult = result
-                            if (result.phase == 4 && resultCorrected.0) {
-                                self.updateAllResult(result: resultCorrected.1, mode: self.runMode)
+                            let propagationResult = propagateUsingUvd(drBuffer: self.unitDrBuffer, result: result)
+                            let propagationValues: [Double] = propagationResult.1
+                            var propagatedResult: [Double] = [resultCorrected.1[0]+propagationValues[0] , resultCorrected.1[1]+propagationValues[1], resultCorrected.1[2]+propagationValues[2]]
+                            let pathMatchingResult = self.pathMatching(building: result.building_name, level: result.level_name, x: propagatedResult[0], y: propagatedResult[1], heading: propagatedResult[2], tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
+                            propagatedResult = pathMatchingResult.xyh
+                            propagatedResult[2] = compensateHeading(heading: propagatedResult[2])
+                            
+                            let diffXyh: [Double] = [abs(self.outputResult.x - propagatedResult[0]), abs(self.outputResult.y - propagatedResult[1]), abs(self.outputResult.absolute_heading - propagatedResult[2])]
+                            let isSimilaryXyh: Bool = checkIsSimilarXyh(input: diffXyh)
+                            
+                            if (result.phase == 4) {
+                                if (pathMatchingResult.isSuccess) {
+                                    self.updateAllResult(result: propagatedResult, inputPhase: inputPhase, mode: self.runMode)
+                                } else {
+                                    self.updateAllResult(result: resultCorrected.1, inputPhase: inputPhase, mode: self.runMode)
+                                }
                             } else if (result.phase == 3) {
-                                self.updateAllResult(result: resultCorrected.1, mode: self.runMode)
+                                if (pathMatchingResult.isSuccess) {
+                                    self.updateAllResult(result: propagatedResult, inputPhase: inputPhase, mode: self.runMode)
+                                } else {
+                                    self.updateAllResult(result: resultCorrected.1, inputPhase: inputPhase, mode: self.runMode)
+                                }
                             } else {
                                 self.isNeedTrajInit = true
                             }
@@ -3860,17 +4094,16 @@ public class ServiceManager: Observation {
                 }
             } else {
                 let log: String = localTime + " , (Jupiter) Error : \(statusCode) Fail to request indoor position in Phase 3"
-//                print(log)
+                print(log)
             }
         })
     }
     
-    private func processPhase4(currentTime: Int, localTime: String, userTrajectory: [TrajectoryInfo], searchInfo: ([Int], [Int], Int, Int)) {
+    private func processPhase4(currentTime: Int, localTime: String, userTrajectory: [TrajectoryInfo], searchInfo: ([Int], [Int], Int, Int, Double)) {
         let localTime = getLocalTimeString()
         self.isSufficientRfd = checkSufficientRfd(userTrajectory: userTrajectory)
         
         self.nowTime = currentTime
-        var requestBiasArray: [Int] = [self.rssiBias]
         var requestScArray: [Double] = [self.scCompensation]
         
         if (self.runMode == "pdr") {
@@ -3880,90 +4113,53 @@ public class ServiceManager: Observation {
         let isInLevelChangeArea = self.checkInLevelChangeArea(result: self.lastResult, mode: self.runMode)
         if (isInLevelChangeArea) {
             levelArray = self.makeLevelChangeArray(buildingName: self.currentBuilding, levelName: self.currentLevel, buildingLevel: self.buildingsAndLevels)
-            self.isPossibleEstBias = false
-            self.isScRequested = true
         }
-        
-        if (self.isBiasConverged) {
-            requestBiasArray = [self.rssiBias]
-            self.isBiasRequested = false
-        } else {
-            if (self.isPossibleEstBias) {
-                if (self.isBiasRequested) {
-                    requestBiasArray = [self.rssiBias]
-                } else {
-                    if (self.isSufficientRfd) {
-                        requestBiasArray = self.rssiBiasArray
-                        self.biasRequestTime = currentTime
-                        self.isBiasRequested = true
-                    } else {
-                        
-                        requestBiasArray = [self.rssiBias]
-                    }
-                }
-            }
-        }
-        
         
         // 사이즈 검사
         // 3개 -> scCompensation 불가능 -> 여기는 무조건 1개 보냄
         if (self.runMode == "pdr") {
-            requestScArray = [1.0]
-        } else {
-            if (requestBiasArray.count == 1) {
-                // 1개 -> scCoompenstaion 가능 -> 여기서 판단해서 3개보낼지 하나보낼지
+            let accumulatedDiagnoal = calculateAccumulatedDiagonal(userTrajectory: userTrajectory)
+            if (accumulatedDiagnoal < USER_TRAJECTORY_DIAGONAL/2) {
+                requestScArray = [1.01]
+            } else {
                 if (self.isScRequested) {
                     requestScArray = [1.01]
                 } else {
-                    requestScArray = self.scCompensationArray
+//                    requestScArray = self.scCompensationArray
+                    requestScArray = [0.9, 1.0]
                     self.scRequestTime = currentTime
                     self.isScRequested = true
+                }
+                requestScArray = self.scCompensationArray
+            }
+        } else {
+            let accumulatedLength = calculateAccumulatedLength(userTrajectory: userTrajectory)
+            if (accumulatedLength < accumulatedLength/2) {
+                requestScArray = [1.01]
+            } else {
+                if (isInLevelChangeArea) {
+                    requestScArray = [0.8, 1.0]
+                } else {
+                    if (self.isScRequested) {
+                        requestScArray = [1.01]
+                    } else {
+                        requestScArray = self.scCompensationArray
+                        self.scRequestTime = currentTime
+                        self.isScRequested = true
+                    }
                 }
             }
         }
         
         self.sccBadCount = 0
-        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name_list: levelArray, spot_id: self.currentSpot, phase: self.phase, search_range: searchInfo.0, search_direction_list: searchInfo.1, rss_compensation_list: requestBiasArray, sc_compensation_list: requestScArray, tail_index: searchInfo.2)
+        let input = FineLocationTracking(user_id: self.user_id, mobile_time: currentTime, sector_id: self.sector_id, building_name: self.currentBuilding, level_name_list: levelArray, phase: self.phase, search_range: searchInfo.0, search_direction_list: searchInfo.1, normalization_scale: self.normalizationScale, device_min_rss: Int(self.deviceMinRss), sc_compensation_list: requestScArray, tail_index: searchInfo.2)
         self.networkCount += 1
-        NetworkManager.shared.postFLT(url: FLT_URL, input: input, isSufficientRfd: self.isSufficientRfd, completion: { [self] statusCode, returnedString, rfdCondition in
+        NetworkManager.shared.postFLT(url: FLT_URL, input: input, completion: { [self] statusCode, returnedString, inputPhase in
             if (!returnedString.contains("timed out")) {
                 self.networkCount = 0
             }
             if (statusCode == 200) {
                 let result = jsonToResult(json: returnedString)
-                // Bias Compensation
-                if (self.isBiasRequested) {
-                    let biasCheckTime = abs(result.mobile_time - self.biasRequestTime)
-                    if (biasCheckTime < 100) {
-                        let resultEstRssiBias = biasEstimator.estimateRssiBias(sccResult: result.scc, biasResult: result.rss_compensation, biasArray: self.rssiBiasArray)
-                        
-                        self.rssiBias = result.rss_compensation
-                        let newBiasArray: [Int] = resultEstRssiBias.1
-                        self.rssiBiasArray = newBiasArray
-                        if (resultEstRssiBias.0) {
-                            self.sccGoodBiasArray.append(result.rss_compensation)
-                            if (self.sccGoodBiasArray.count >= GOOD_BIAS_ARRAY_SIZE) {
-                                let biasAvg = biasEstimator.averageBiasArray(biasArray: self.sccGoodBiasArray)
-                                self.sccGoodBiasArray.remove(at: 0)
-                                self.rssiBias = biasAvg.0
-                                self.isBiasConverged = biasAvg.1
-                                if (!biasAvg.1) {
-                                    self.sccGoodBiasArray = [Int]()
-                                }
-                                biasEstimator.saveRssiBias(bias: self.rssiBias, biasArray: self.sccGoodBiasArray, isConverged: self.isBiasConverged, sector_id: self.sector_id)
-                                if (self.isBiasConverged) {
-                                    self.postRssiBias(sector_id: self.sector_id, bias: self.rssiBias)
-                                }
-                            }
-                        }
-                        self.isBiasRequested = false
-                        displayOutput.bias = self.rssiBias
-                        displayOutput.isConverged = self.isBiasConverged
-                    } else if (biasCheckTime > 3000) {
-                        self.isBiasRequested = false
-                    }
-                }
-                
                 // Sc Compensation
                 if (self.isScRequested) {
                     let compensationCheckTime = abs(result.mobile_time - self.scRequestTime)
@@ -3976,7 +4172,7 @@ public class ServiceManager: Observation {
                             }
                             self.scCompensationBadCount = 0
                         }
-                        
+
                         if (self.scCompensationBadCount > 1) {
                             self.scCompensationBadCount = 0
                             let resultEstScCompensation = estimateScCompensation(sccResult: result.scc, scResult: result.sc_compensation, scArray: self.scCompensationArray)
@@ -3991,7 +4187,7 @@ public class ServiceManager: Observation {
                 if (result.index > self.indexPast) {
                     self.pastSearchDirection = result.search_direction
                     if (self.isActiveKf && result.phase == 4) {
-                        if (!(result.x == 0 && result.y == 0) && !self.isDetermineSpot) {
+                        if (!(result.x == 0 && result.y == 0) && !self.isDetermineSpot && self.phase != 2) {
                             if (self.isPhaseBreak) {
                                 self.kalmanR = 0.5
                                 self.headingKalmanR = 1
@@ -4038,33 +4234,23 @@ public class ServiceManager: Observation {
                                     var dh: Double = 0
                                             
                                     if (currentTuResult.mobile_time != 0 && pastTuResult.mobile_time != 0) {
-                                        if (self.isEnterPhase2) {
+                                        if let idx = indexBuffer.firstIndex(of: result.index) {
+                                            dx = currentTuResult.x - tuBuffer[idx][0]
+                                            dy = currentTuResult.y - tuBuffer[idx][1]
+                                            currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading)
+                                            let tuBufferHeading = compensateHeading(heading: tuBuffer[idx][2])
+                                                    
+                                            dh = currentTuResult.absolute_heading - tuBufferHeading
+                                            
+                                            self.usedUvdIndex = idx
+                                            self.isNeedUvdIndexBufferClear = true
+                                        } else {
                                             dx = currentTuResult.x - pastTuResult.x
                                             dy = currentTuResult.y - pastTuResult.y
                                             currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading)
                                             pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading)
                                                     
                                             dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
-                                            self.isEnterPhase2 = false
-                                        } else {
-                                            if let idx = indexBuffer.firstIndex(of: result.index) {
-                                                dx = currentTuResult.x - tuBuffer[idx][0]
-                                                dy = currentTuResult.y - tuBuffer[idx][1]
-                                                currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading)
-                                                let tuBufferHeading = compensateHeading(heading: tuBuffer[idx][2])
-                                                        
-                                                dh = currentTuResult.absolute_heading - tuBufferHeading
-                                                
-                                                self.usedUvdIndex = idx
-                                                self.isNeedUvdIndexBufferClear = true
-                                            } else {
-                                                dx = currentTuResult.x - pastTuResult.x
-                                                dy = currentTuResult.y - pastTuResult.y
-                                                currentTuResult.absolute_heading = compensateHeading(heading: currentTuResult.absolute_heading)
-                                                pastTuResult.absolute_heading = compensateHeading(heading: pastTuResult.absolute_heading)
-                                                        
-                                                dh = currentTuResult.absolute_heading - pastTuResult.absolute_heading
-                                            }
                                         }
                                                 
                                         resultForMu.x = resultCorrected.1[0] + dx
@@ -4073,8 +4259,8 @@ public class ServiceManager: Observation {
                                             resultForMu.absolute_heading = resultCorrected.1[2] + dh
                                         } else {
                                             resultForMu.absolute_heading = resultForMu.absolute_heading + dh
-                                            resultForMu.absolute_heading = compensateHeading(heading: resultForMu.absolute_heading)
                                         }
+                                        resultForMu.absolute_heading = compensateHeading(heading: resultForMu.absolute_heading)
                                     }
                                             
                                     let muOutput = measurementUpdate(timeUpdatePosition: timeUpdatePosition, serverOutputHat: resultForMu, originalResult: resultCorrected.1, isNeedHeadingCorrection: self.isNeedHeadingCorrection, mode: self.runMode)
@@ -4125,8 +4311,6 @@ public class ServiceManager: Observation {
                         self.SQUARE_RANGE = self.SQUARE_RANGE_LARGE
                         self.kalmanR = 0.01
                         self.headingKalmanR = 0.01
-                        self.indexAfterResponse = 0
-                        self.isPossibleEstBias = false
                         self.isNeedTrajInit = true
                         self.isPhaseBreak = true
                         self.phase = 1
@@ -4143,7 +4327,7 @@ public class ServiceManager: Observation {
                 self.preOutputMobileTime = result.mobile_time
             } else {
                 let log: String = localTime + " , (Jupiter) Error : \(statusCode) Fail to request indoor position in Phase 4"
-//                print(log)
+                print(log)
             }
         })
     }
@@ -4163,7 +4347,7 @@ public class ServiceManager: Observation {
                 }
                 
                 if (isRunOsr) {
-                    let input = OnSpotRecognition(user_id: self.user_id, mobile_time: currentTime, rss_compensation: self.rssiBias)
+                    let input = OnSpotRecognition(user_id: self.user_id, mobile_time: currentTime, normalization_scale: self.normalizationScale, device_min_rss: Int(self.deviceMinRss), standard_min_rss: Int(self.standardMinRss))
                     NetworkManager.shared.postOSR(url: OSR_URL, input: input, completion: { [self] statusCode, returnedString in
                         if (statusCode == 200) {
                             let result = decodeOSR(json: returnedString)
@@ -4186,7 +4370,6 @@ public class ServiceManager: Observation {
         
         if (self.networkCount >= 5 && NetworkCheck.shared.isConnectedToInternet()) {
             self.reporting(input: NETWORK_WAITING_FLAG)
-            postReport(report: NETWORK_WAITING_FLAG)
         }
         
         if (NetworkCheck.shared.isConnectedToInternet()) {
@@ -4195,7 +4378,6 @@ public class ServiceManager: Observation {
             if (!self.isNetworkConnectReported) {
                 self.isNetworkConnectReported = true
                 self.reporting(input: NETWORK_CONNECTION_FLAG)
-                postReport(report: NETWORK_CONNECTION_FLAG)
             }
         }
     }
@@ -4281,9 +4463,9 @@ public class ServiceManager: Observation {
                     self.lastOsrId = result.spot_id
                     self.travelingOsrDistance = 0
                     self.buildingLevelChangedTime = currentTime
-                    self.isPossibleEstBias = false
                     
                     self.isDetermineSpot = true
+                    self.isNeedRemovePhase2To4Trajectroy = true
                     
                     if (self.isStartSimulate) {
                         self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
@@ -4319,10 +4501,10 @@ public class ServiceManager: Observation {
                         self.currentSpot = result.spot_id
                         self.lastOsrId = result.spot_id
                         self.travelingOsrDistance = 0
-                        self.isPossibleEstBias = false
                         self.buildingLevelChangedTime = currentTime
                         
                         self.isDetermineSpot = true
+                        self.isNeedRemovePhase2To4Trajectroy = true
                         
                         if (self.isStartSimulate) {
                             self.makeOutputResult(input: self.outputResult, isPast: self.flagPast, runMode: self.runMode, isVenusMode: self.isVenusMode)
@@ -4483,24 +4665,15 @@ public class ServiceManager: Observation {
         return (false, area)
     }
     
-    func reEstimateRssiBias() {
-        print(getLocalTimeString() + " , (Jupiter) Bias is not correct -> Initialization")
-        self.isBiasConverged = false
-        
-        self.rssiBias = 2
-        self.rssiBiasArray = [2, 0, 4]
-        self.sccGoodBiasArray = [Int]()
-    }
-    
-    func postRssiBias(sector_id: Int, bias: Int) {
+    func postParam(sector_id: Int, normailzationScale: Double) {
         let localTime = getLocalTimeString()
         
-        let input = JupiterBiasPost(device_model: self.deviceModel, os_version: self.osVersion, sector_id: sector_id, rss_compensation: bias)
-        NetworkManager.shared.postJupiterBias(url: RCR_URL, input: input, completion: { statusCode, returnedString in
+        let input = JupiterParamPost(device_model: self.deviceModel, os_version: self.osVersion, sector_id: sector_id, normalization_scale: normailzationScale)
+        NetworkManager.shared.postJupiterParam(url: NS_URL, input: input, completion: { statusCode, returnedString in
             if (statusCode == 200) {
-                print(localTime + " , (Jupiter) Success : Save Rssi Bias \(bias)")
+                print(localTime + " , (Jupiter) Success : Save Jupiter Param \(normailzationScale)")
             } else {
-                print(localTime + " , (Jupiter) Warnings : Save Rssi Bias ")
+                print(localTime + " , (Jupiter) Warnings : Save Jupiter Param ")
             }
         })
     }
@@ -4512,7 +4685,6 @@ public class ServiceManager: Observation {
                 if (statusCode == 200) {
                     let localTime = getLocalTimeString()
                     let log: String = localTime + " , (Jupiter) Success : Record Mobile Report \(report)"
-//                    print(log)
                 }
             })
         }
@@ -4533,19 +4705,13 @@ public class ServiceManager: Observation {
         let currentTime = getCurrentTimeInMilliseconds()
         let bleDictionary: [String: [[Double]]]? = bleManager.bleDictionary
         if let bleData = bleDictionary {
-            let trimmedResult = trimBleData(bleInput: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
-            switch trimmedResult {
-            case .success(let trimmedData):
-                let bleAvg = avgBleData(bleDictionary: trimmedData)
-                let bleRaw = latestBleData(bleDictionary: trimmedData)
-                
-                sensorManager.collectData.time = currentTime
-                sensorManager.collectData.bleRaw = bleRaw
-                sensorManager.collectData.bleAvg = bleAvg
-            case .failure(let error):
-                print(getLocalTimeString() + " , (Jupiter) Error : RFD \(error)")
-                self.reporting(input: BLE_ERROR_FLAG)
-            }
+            let trimmedResult = trimBleForCollect(bleData: bleData, nowTime: getCurrentTimeInMillisecondsDouble(), validTime: validTime)
+            let bleAvg = avgBleData(bleDictionary: trimmedResult)
+            let bleRaw = latestBleData(bleDictionary: trimmedResult)
+            
+            sensorManager.collectData.time = currentTime
+            sensorManager.collectData.bleRaw = bleRaw
+            sensorManager.collectData.bleAvg = bleAvg
         } else {
             let log: String = localTime + " , (Jupiter) Warnings : Fail to get recent ble"
             print(log)
@@ -4628,6 +4794,7 @@ public class ServiceManager: Observation {
             }
         }
         road = [roadX, roadY]
+        self.PathPointMinMax = [roadX.min() ?? 0, roadY.min() ?? 0, roadX.max() ?? 0, roadY.max() ?? 0]
         
         return (roadType, road, roadScale, roadHeading)
     }
@@ -4764,7 +4931,7 @@ public class ServiceManager: Observation {
         return isFindClosestSimulation
     }
     
-    private func updateAllResult(result: [Double], mode: String) {
+    private func updateAllResult(result: [Double], inputPhase: Int, mode: String) {
         self.timeUpdatePosition.x = result[0]
         self.timeUpdatePosition.y = result[1]
         
@@ -4792,7 +4959,7 @@ public class ServiceManager: Observation {
                 accumulatedLength += userTrajectory.length
             }
             
-            if (accumulatedLength > USER_TRAJECTORY_LENGTH*0.4) {
+            if (accumulatedLength > USER_TRAJECTORY_LENGTH*0.4 && inputPhase != 1) {
                 self.timeUpdatePosition.heading = result[2]
                 self.timeUpdateOutput.absolute_heading = result[2]
                 self.measurementPosition.heading = result[2]
@@ -4863,10 +5030,9 @@ public class ServiceManager: Observation {
             
             let pathhMatchingArea = checkInEntranceMatchingArea(x: x, y: y, building: building, level: levelCopy)
             
-            // Heading 사용
             var idshArray = [[Double]]()
+            var idshArrayWhenFail = [[Double]]()
             var pathArray = [[Double]]()
-            var failArray = [[Double]]()
             if (!mainRoad.isEmpty) {
                 let roadX = mainRoad[0]
                 let roadY = mainRoad[1]
@@ -4902,82 +5068,120 @@ public class ServiceManager: Observation {
                             var idsh: [Double] = [index, distance, magScale, heading]
                             var path: [Double] = [xPath, yPath, 0, 0]
                             
-                            let headingArray = mainHeading[i]
-                            var isValidIdh: Bool = true
-                            if (!headingArray.isEmpty) {
-                                let headingData = headingArray.components(separatedBy: ",")
-                                var diffHeading = [Double]()
-                                for j in 0..<headingData.count {
-                                    if(!headingData[j].isEmpty) {
-                                        let mapHeading = Double(headingData[j])!
-                                        if (heading > 270 && (mapHeading >= 0 && mapHeading < 90)) {
-                                            diffHeading.append(abs(heading - (mapHeading+360)))
-                                        } else if (mapHeading > 270 && (heading >= 0 && heading < 90)) {
-                                            diffHeading.append(abs(mapHeading - (heading+360)))
-                                        } else {
-                                            diffHeading.append(abs(heading - mapHeading))
+                            idshArrayWhenFail.append(idsh)
+                            
+                            // Heading 사용
+                            if (isUseHeading) {
+                                let headingArray = mainHeading[i]
+                                var isValidIdh: Bool = true
+                                if (!headingArray.isEmpty) {
+                                    let headingData = headingArray.components(separatedBy: ",")
+                                    var diffHeading = [Double]()
+                                    for j in 0..<headingData.count {
+                                        if(!headingData[j].isEmpty) {
+                                            let mapHeading = Double(headingData[j])!
+                                            if (heading > 270 && (mapHeading >= 0 && mapHeading < 90)) {
+                                                diffHeading.append(abs(heading - (mapHeading+360)))
+                                            } else if (mapHeading > 270 && (heading >= 0 && heading < 90)) {
+                                                diffHeading.append(abs(mapHeading - (heading+360)))
+                                            } else {
+                                                diffHeading.append(abs(heading - mapHeading))
+                                            }
                                         }
+                                    }
+                                    
+                                    if (!diffHeading.isEmpty) {
+                                        let idxHeading = diffHeading.firstIndex(of: diffHeading.min()!)
+                                        let minHeading = Double(headingData[idxHeading!])!
+                                        idsh[3] = minHeading
+                                        if (isUseHeading) {
+                                            if (heading > 270 && (minHeading >= 0 && minHeading < 90)) {
+                                                if (abs(heading-360) >= HEADING_RANGE) {
+                                                    isValidIdh = false
+                                                }
+                                            } else if (minHeading > 270 && (heading >= 0 && heading < 90)) {
+                                                if (abs(minHeading-360) >= HEADING_RANGE) {
+                                                    isValidIdh = false
+                                                }
+                                            } else {
+                                                if (abs(heading-minHeading) >= HEADING_RANGE) {
+                                                    isValidIdh = false
+                                                }
+                                            }
+                                        }
+                                        path[2] = minHeading
+                                        path[3] = 1
                                     }
                                 }
                                 
-                                if (!diffHeading.isEmpty) {
-                                    let idxHeading = diffHeading.firstIndex(of: diffHeading.min()!)
-                                    let minHeading = Double(headingData[idxHeading!])!
-                                    idsh[3] = minHeading
-                                    if (isUseHeading) {
-                                        if (heading > 270 && (minHeading >= 0 && minHeading < 90)) {
-                                            if (abs(heading-360) >= HEADING_RANGE) {
-                                                isValidIdh = false
-                                            }
-                                        } else if (minHeading > 270 && (heading >= 0 && heading < 90)) {
-                                            if (abs(minHeading-360) >= HEADING_RANGE) {
-                                                isValidIdh = false
-                                            }
+                                if (isValidIdh) {
+                                    idshArray.append(idsh)
+                                    pathArray.append(path)
+                                }
+                                
+                                if (!idshArray.isEmpty) {
+                                    let sortedIdsh = idshArray.sorted(by: {$0[1] < $1[1] })
+                                    var index: Int = 0
+                                    var correctedHeading: Double = heading
+                                    var correctedScale = 1.0
+                                    
+                                    if (!sortedIdsh.isEmpty) {
+                                        let minData: [Double] = sortedIdsh[0]
+                                        index = Int(minData[0])
+                                        if (isUseHeading) {
+                                            correctedScale = minData[2]
+                                            correctedHeading = minData[3]
                                         } else {
-                                            if (abs(heading-minHeading) >= HEADING_RANGE) {
-                                                isValidIdh = false
-                                            }
+                                            correctedHeading = heading
                                         }
                                     }
-                                    path[2] = minHeading
-                                    path[3] = 1
+                                    
+                                    isSuccess = true
+                                    
+                                    if (correctedScale < 0.7) {
+                                        correctedScale = 0.7
+                                    }
+                                    
+                                    unitDRGenerator.setVelocityScaleFactor(scaleFactor: correctedScale)
+                                    xyh = [roadX[index], roadY[index], correctedHeading]
+                                } else {
+                                    let sortedIdsh = idshArrayWhenFail.sorted(by: {$0[1] < $1[1] })
+                                    var index: Int = 0
+                                    var correctedScale = 1.0
+                                    
+                                    if (!sortedIdsh.isEmpty) {
+                                        let minData: [Double] = sortedIdsh[0]
+                                        index = Int(minData[0])
+                                        correctedScale = minData[2]
+                                    }
+                                    
+                                    isSuccess = false
+                                    
+                                    if (correctedScale < 0.7) {
+                                        correctedScale = 0.7
+                                    }
+                                    
+                                    unitDRGenerator.setVelocityScaleFactor(scaleFactor: correctedScale)
+                                    xyh = [roadX[index], roadY[index], heading]
                                 }
-                            }
-                            if (isValidIdh) {
+                            } else {
+                                // Heading 미사용
                                 idshArray.append(idsh)
                                 pathArray.append(path)
-                            } else {
-                                failArray.append(idsh)
+                                if (!idshArray.isEmpty) {
+                                    isSuccess = true
+                                    
+                                    let sortedIdsh = idshArray.sorted(by: {$0[1] < $1[1] })
+                                    var index: Int = 0
+                                    if (!sortedIdsh.isEmpty) {
+                                        let minData: [Double] = sortedIdsh[0]
+                                        index = Int(minData[0])
+                                        xyh = [roadX[index], roadY[index], heading]
+                                    }
+                                }
                             }
                         }
                     }
-                }
-                
-                if (!idshArray.isEmpty) {
-                    let sortedIdsh = idshArray.sorted(by: {$0[1] < $1[1] })
-                    var index: Int = 0
-                    var correctedHeading: Double = heading
-                    var correctedScale = 1.0
-                    
-                    if (!sortedIdsh.isEmpty) {
-                        let minData: [Double] = sortedIdsh[0]
-                        index = Int(minData[0])
-                        if (isUseHeading) {
-                            correctedScale = minData[2]
-                            correctedHeading = minData[3]
-                        } else {
-                            correctedHeading = heading
-                        }
-                    }
-                    
-                    isSuccess = true
-                    
-                    if (correctedScale < 0.7) {
-                        correctedScale = 0.7
-                    }
-                    
-                    unitDRGenerator.setVelocityScaleFactor(scaleFactor: correctedScale)
-                    xyh = [roadX[index], roadY[index], correctedHeading]
                 }
             }
         }
@@ -5087,6 +5291,170 @@ public class ServiceManager: Observation {
         return (isSuccess, xyd, minTrajectory)
     }
     
+    func extendedPathTrajectoryMatching(building: String, level: String, x: Double, y: Double, heading: Double, pastResult: FineLocationTrackingResult, drBuffer: [UnitDRInfo], HEADING_RANGE: Double, pathType: Int, mode: String) -> (isSuccess: Bool, xyd: [Double], minTrajectory: [[Double]], minTrajectoryOriginal: [[Double]]) {
+        let startTime: Double = getCurrentTimeInMillisecondsDouble()
+        
+        let pastX = pastResult.x
+        let pastY = pastResult.y
+        
+        var isSuccess: Bool = false
+        var xyd: [Double] = [x, y, 50]
+        var minTrajectory = [[Double]]()
+        var minTrajectoryOriginal = [[Double]]()
+        
+        let levelCopy: String = removeLevelDirectionString(levelName: level)
+        let key: String = "\(building)_\(levelCopy)"
+        
+        if (!(building.isEmpty) && !(level.isEmpty)) {
+            guard let mainType: [Int] = self.PathType[key] else {
+                return (isSuccess, xyd, minTrajectory, minTrajectoryOriginal)
+            }
+            guard let mainRoad: [[Double]] = self.PathPoint[key] else {
+                return (isSuccess, xyd, minTrajectory, minTrajectoryOriginal)
+            }
+            
+            if (!mainRoad.isEmpty) {
+                let roadX = mainRoad[0]
+                let roadY = mainRoad[1]
+                
+                var xMin = x - SQUARE_RANGE
+                var xMax = x + SQUARE_RANGE
+                var yMin = y - SQUARE_RANGE
+                var yMax = y + SQUARE_RANGE
+                
+                var ppXydArray = [[Double]]()
+                var minDistanceCoord = [Double]()
+                
+                for i in 0..<roadX.count {
+                    let xPath = roadX[i]
+                    let yPath = roadY[i]
+                    
+                    let pathTypeLoaded = mainType[i]
+                    if (pathType == 1) {
+                        if (pathType != pathTypeLoaded) {
+                            continue
+                        }
+                    }
+                    
+                    // XY 범위 안에 있는 값 중에 검사
+                    if (xPath >= xMin && xPath <= xMax) {
+                        if (yPath >= yMin && yPath <= yMax) {
+                            var passedPp = [[Double]]()
+                            var distanceSum: Double = 0
+                            
+                            let headingCompensation: Double = heading - drBuffer[drBuffer.count-1].heading
+                            var headingBuffer: [Double] = []
+                            for i in 0..<drBuffer.count {
+                                let compensatedHeading = compensateHeading(heading: drBuffer[i].heading + headingCompensation - 180)
+                                headingBuffer.append(compensatedHeading)
+                            }
+                            
+                            var xyFromHead: [Double] = [xPath, yPath]
+                            var xyOriginal: [Double] = [xPath, yPath]
+                            let firstXyd = extendedCalDistacneFromNearestPp(coord: xyFromHead, passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                            passedPp.append(xyFromHead)
+                            
+                            var xydArray: [[Double]] = [firstXyd]
+                            distanceSum += firstXyd[2]
+                            
+                            var trajectoryFromHead = [[Double]]()
+                            var trajectoryOriginal = [[Double]]()
+                            trajectoryFromHead.append(xyFromHead)
+                            trajectoryOriginal.append(xyOriginal)
+                            for i in (1..<drBuffer.count).reversed() {
+                                let headAngle = headingBuffer[i]
+                                xyOriginal[0] = xyOriginal[0] + drBuffer[i].length*cos(headAngle*D2R)
+                                xyOriginal[1] = xyOriginal[1] + drBuffer[i].length*sin(headAngle*D2R)
+                                trajectoryOriginal.append(xyOriginal)
+                                if (mode == "pdr") {
+                                    if (i%2 == 0) {
+                                        let propagatedX = xyFromHead[0] + drBuffer[i].length*cos(headAngle*D2R)
+                                        let propagatedY = xyFromHead[1] + drBuffer[i].length*sin(headAngle*D2R)
+                                        let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                                        
+                                        xyFromHead[0] = calculatedXyd[0]
+                                        xyFromHead[1] = calculatedXyd[1]
+                                        xydArray.append(calculatedXyd)
+                                        distanceSum += calculatedXyd[2]
+                                        trajectoryFromHead.append(xyFromHead)
+                                        passedPp.append(xyFromHead)
+                                    } else {
+                                        let propagatedX = xyFromHead[0] + drBuffer[i].length*cos(headAngle*D2R)
+                                        let propagatedY = xyFromHead[1] + drBuffer[i].length*sin(headAngle*D2R)
+                                        let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                                        
+                                        xyFromHead[0] = propagatedX
+                                        xyFromHead[1] = propagatedY
+                                        xydArray.append(calculatedXyd)
+                                        distanceSum += calculatedXyd[2]
+                                        trajectoryFromHead.append(xyFromHead)
+                                        passedPp.append(xyFromHead)
+                                    }
+                                } else {
+                                    let propagatedX = xyFromHead[0] + drBuffer[i].length*cos(headAngle*D2R)
+                                    let propagatedY = xyFromHead[1] + drBuffer[i].length*sin(headAngle*D2R)
+                                    let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                                    
+                                    xyFromHead[0] = calculatedXyd[0]
+                                    xyFromHead[1] = calculatedXyd[1]
+                                    xydArray.append(calculatedXyd)
+                                    distanceSum += calculatedXyd[2]
+                                    trajectoryFromHead.append(xyFromHead)
+                                    passedPp.append(xyFromHead)
+                                }
+
+//                                let propagatedX = xyFromHead[0] + drBuffer[i].length*cos(headAngle*D2R)
+//                                let propagatedY = xyFromHead[1] + drBuffer[i].length*sin(headAngle*D2R)
+//                                let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+//                                trajectoryOriginal.append(xyOriginal)
+//
+//                                xyFromHead[0] = calculatedXyd[0]
+//                                xyFromHead[1] = calculatedXyd[1]
+//                                xydArray.append(calculatedXyd)
+//                                distanceSum += calculatedXyd[2]
+//                                trajectoryFromHead.append(xyFromHead)
+//                                passedPp.append(xyFromHead)
+                            }
+                            
+                            let distWithPast = sqrt((pastX - xPath)*(pastX - xPath) + (pastY - yPath)*(pastY - yPath))
+                            ppXydArray.append([xPath, yPath, distanceSum, distWithPast])
+                            
+                            if (minDistanceCoord.isEmpty) {
+                                minDistanceCoord = [xPath, yPath, distanceSum, distWithPast]
+                                minTrajectory = trajectoryFromHead
+                                minTrajectoryOriginal = trajectoryOriginal
+                            } else {
+                                let distanceCurrent = distanceSum
+                                let distancePast = minDistanceCoord[2]
+                                if (distanceCurrent < distancePast && distWithPast <= 3) {
+                                    minDistanceCoord = [xPath, yPath, distanceSum, distWithPast]
+                                    minTrajectory = trajectoryFromHead
+                                    minTrajectoryOriginal = trajectoryOriginal
+                                }
+                            }
+                        }
+                    }
+                    
+//                    print(getLocalTimeString() + " , (PM) minDistanceCoord = \(minDistanceCoord)")
+                    if (!minDistanceCoord.isEmpty) {
+                        if (minDistanceCoord[2] <= 15 && minDistanceCoord[3] <= 3) {
+                            isSuccess = true
+                        } else {
+                            isSuccess = false
+                        }
+                        xyd = minDistanceCoord
+                    }
+                }
+            }
+        }
+        
+//        print(getLocalTimeString() + " , (PM) isSuccess = \(isSuccess) // minTrajectory = \(minTrajectory)")
+        let endTime: Double = getCurrentTimeInMillisecondsDouble()
+        let checkTime = (endTime-startTime)*1e-3
+//        print(getLocalTimeString() + " , (Jupiter) Path-Traj Matching : time = \(checkTime)")
+        return (isSuccess, xyd, minTrajectory, minTrajectoryOriginal)
+    }
+    
     func calDistacneFromNearestPp(coord: [Double], mainRoad: [[Double]], mainType: [Int], pathType: Int) -> [Double] {
         let x = coord[0]
         let y = coord[1]
@@ -5131,9 +5499,272 @@ public class ServiceManager: Observation {
                 xyd = minData
             }
         }
+//        print(getLocalTimeString() + " , (PM) calDistacneFromNearestPp = \(xyd)")
         
         return xyd
     }
+    
+    func extendedCalDistacneFromNearestPp(coord: [Double], passedPp: [[Double]], mainRoad: [[Double]], mainType: [Int], pathType: Int) -> [Double] {
+        let x = coord[0]
+        let y = coord[1]
+        
+        var xyd: [Double] = [x, y, 50]
+        
+        var xydArray = [[Double]]()
+        
+        let roadX = mainRoad[0]
+        let roadY = mainRoad[1]
+        
+        var xMin = x - SQUARE_RANGE
+        var xMax = x + SQUARE_RANGE
+        var yMin = y - SQUARE_RANGE
+        var yMax = y + SQUARE_RANGE
+        
+        for i in 0..<roadX.count {
+            let xPath = roadX[i]
+            let yPath = roadY[i]
+            
+            let pathTypeLoaded = mainType[i]
+            if (pathType == 1) {
+                if (pathType != pathTypeLoaded) {
+                    continue
+                }
+            }
+            
+            // XY 범위 안에 있는 값 중에 검사
+            if (!passedPp.isEmpty) {
+                let isContain: Bool = containsArray(passedPp, [xPath, yPath])
+                if (isContain) {
+                    continue
+                }
+            }
+            
+            if (xPath >= xMin && xPath <= xMax) {
+                if (yPath >= yMin && yPath <= yMax) {
+                    let distance = sqrt(pow(x-xPath, 2) + pow(y-yPath, 2))
+                    var xyd: [Double] = [xPath, yPath, distance]
+                    
+                    xydArray.append(xyd)
+                }
+            }
+        }
+        
+        if (!xydArray.isEmpty) {
+            let sortedXyd = xydArray.sorted(by: {$0[2] < $1[2] })
+            if (!sortedXyd.isEmpty) {
+                let minData: [Double] = sortedXyd[0]
+                xyd = minData
+            }
+        }
+//        print(getLocalTimeString() + " , (PM) extendedCalDistacneFromNearestPp = \(xyd)")
+        
+        return xyd
+    }
+    
+    func calTrajectoryRatio(trajPm: [[Double]], trajOg: [[Double]]) -> Double {
+        var ratio = 1.0
+        
+        var lengthPm: Double = 0
+        var lengthOg: Double = 0
+        
+        for i in 1..<trajPm.count {
+            let pmDiffX = trajPm[i][0] - trajPm[i-1][0]
+            let pmDiffY = trajPm[i][1] - trajPm[i-1][1]
+            lengthPm += sqrt(pmDiffX*pmDiffX + pmDiffY*pmDiffY)
+            
+            let ogDiffX = trajOg[i][0] - trajOg[i-1][0]
+            let ogDiffY = trajOg[i][1] - trajOg[i-1][1]
+            lengthOg += sqrt(ogDiffX*ogDiffX + ogDiffY*ogDiffY)
+        }
+        
+        ratio = lengthPm/lengthOg
+        
+        return ratio
+    }
+    
+    func containsArray(_ array2D: [[Double]], _ targetArray: [Double]) -> Bool {
+        for array in array2D {
+            if array == targetArray {
+                return true
+            }
+        }
+        return false
+    }
+    
+    func getBestMatchedTrajectory(building: String, level: String, searchRange: [Double], tailHeading: Double, uvHeading: [Double], uvLength: [Double], pathType: Int, mode: String) -> MatchedTraj {
+        var isSuccess: Bool = false
+        var xyd: [Double] = [0, 0, 50]
+        var minTrajectory = [[Double]]()
+        var minTrajectoryOriginal = [[Double]]()
+        
+        var matchedTraj = MatchedTraj(isSuccess: isSuccess, xyd: xyd, minTrajectory: minTrajectory, minTrajectoryOriginal: minTrajectoryOriginal)
+        let levelCopy: String = removeLevelDirectionString(levelName: level)
+        let key: String = "\(building)_\(levelCopy)"
+        
+        if (!(building.isEmpty) && !(level.isEmpty)) {
+            guard let mainType: [Int] = self.PathType[key] else {
+                return matchedTraj
+            }
+            guard let mainRoad: [[Double]] = self.PathPoint[key] else {
+                return matchedTraj
+            }
+            
+            if (!mainRoad.isEmpty) {
+                let roadX = mainRoad[0]
+                let roadY = mainRoad[1]
+                
+                var xMin = searchRange[0]
+                var xMax = searchRange[2]
+                var yMin = searchRange[1]
+                var yMax = searchRange[3]
+                
+                var ppXydArray = [[Double]]()
+                var minDistanceCoord = [Double]()
+                
+                for i in 0..<roadX.count {
+                    let xPath = roadX[i]
+                    let yPath = roadY[i]
+                    
+                    let pathTypeLoaded = mainType[i]
+                    if (pathType == 1) {
+                        if (pathType != pathTypeLoaded) {
+                            continue
+                        }
+                    }
+                    
+                    // XY 범위 안에 있는 값 중에 검사
+                    if (xPath >= xMin && xPath <= xMax) {
+                        if (yPath >= yMin && yPath <= yMax) {
+                            var passedPp = [[Double]]()
+                            var distanceSum: Double = 0
+                            
+                            let headingCompensation: Double = tailHeading - uvHeading[0]
+                            var headingBuffer: [Double] = []
+                            for i in 0..<uvHeading.count {
+                                let compensatedHeading = compensateHeading(heading: uvHeading[i] + headingCompensation)
+                                headingBuffer.append(compensatedHeading)
+                            }
+                            
+                            var xyFromHead: [Double] = [xPath, yPath]
+                            var xyOriginal: [Double] = [xPath, yPath]
+                            let firstXyd = extendedCalDistacneFromNearestPp(coord: xyFromHead, passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                            passedPp.append(xyFromHead)
+                            
+                            var xydArray: [[Double]] = [firstXyd]
+                            distanceSum += firstXyd[2]
+                            
+                            var trajectoryFromHead = [[Double]]()
+                            var trajectoryOriginal = [[Double]]()
+                            trajectoryFromHead.append(xyFromHead)
+                            trajectoryOriginal.append(xyOriginal)
+                            for i in 1..<uvHeading.count{
+                                let headAngle = headingBuffer[i]
+                                xyOriginal[0] = xyOriginal[0] + uvLength[i]*cos(headAngle*D2R)
+                                xyOriginal[1] = xyOriginal[1] + uvLength[i]*sin(headAngle*D2R)
+                                trajectoryOriginal.append(xyOriginal)
+                                
+//                                let propagatedX = xyFromHead[0] + uvLength[i]*cos(headAngle*D2R)
+//                                let propagatedY = xyFromHead[1] + uvLength[i]*sin(headAngle*D2R)
+//                                let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+//
+//                                xyFromHead[0] = calculatedXyd[0]
+//                                xyFromHead[1] = calculatedXyd[1]
+//                                xydArray.append(calculatedXyd)
+//                                distanceSum += calculatedXyd[2]
+//                                trajectoryFromHead.append(xyFromHead)
+//                                passedPp.append(xyFromHead)
+                                
+                                if (mode == "pdr") {
+                                    if (i%2 == 0) {
+                                        let propagatedX = xyFromHead[0] + uvLength[i]*cos(headAngle*D2R)
+                                        let propagatedY = xyFromHead[1] + uvLength[i]*sin(headAngle*D2R)
+                                        let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                                        
+                                        xyFromHead[0] = calculatedXyd[0]
+                                        xyFromHead[1] = calculatedXyd[1]
+                                        xydArray.append(calculatedXyd)
+                                        distanceSum += calculatedXyd[2]
+                                        trajectoryFromHead.append(xyFromHead)
+                                        passedPp.append(xyFromHead)
+                                    } else {
+                                        let propagatedX = xyFromHead[0] + uvLength[i]*cos(headAngle*D2R)
+                                        let propagatedY = xyFromHead[1] + uvLength[i]*sin(headAngle*D2R)
+                                        let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                                        
+                                        xyFromHead[0] = propagatedX
+                                        xyFromHead[1] = propagatedY
+                                        xydArray.append(calculatedXyd)
+                                        distanceSum += calculatedXyd[2]
+                                        trajectoryFromHead.append(xyFromHead)
+                                        passedPp.append(xyFromHead)
+                                    }
+                                } else {
+                                    let propagatedX = xyFromHead[0] + uvLength[i]*cos(headAngle*D2R)
+                                    let propagatedY = xyFromHead[1] + uvLength[i]*sin(headAngle*D2R)
+                                    let calculatedXyd = extendedCalDistacneFromNearestPp(coord: [propagatedX, propagatedY], passedPp: passedPp, mainRoad: mainRoad, mainType: mainType, pathType: pathType)
+                                    
+                                    xyFromHead[0] = calculatedXyd[0]
+                                    xyFromHead[1] = calculatedXyd[1]
+                                    xydArray.append(calculatedXyd)
+                                    distanceSum += calculatedXyd[2]
+                                    trajectoryFromHead.append(xyFromHead)
+                                    passedPp.append(xyFromHead)
+                                }
+                            }
+                            
+                            ppXydArray.append([xPath, yPath, distanceSum])
+                            
+                            if (minDistanceCoord.isEmpty) {
+                                minDistanceCoord = [xPath, yPath, distanceSum]
+                                minTrajectory = trajectoryFromHead
+                                minTrajectoryOriginal = trajectoryOriginal
+                            } else {
+                                let distanceCurrent = distanceSum
+                                let distancePast = minDistanceCoord[2]
+                                if (distanceCurrent < distancePast) {
+                                    minDistanceCoord = [xPath, yPath, distanceSum]
+                                    minTrajectory = trajectoryFromHead
+                                    minTrajectoryOriginal = trajectoryOriginal
+                                }
+                            }
+                        }
+                    }
+
+                    if (!minDistanceCoord.isEmpty) {
+                        isSuccess = true
+//                        if (minDistanceCoord[2] <= 15) {
+//                            isSuccess = true
+//                        } else {
+//                            isSuccess = false
+//                        }
+                        xyd = minDistanceCoord
+                    }
+                }
+            }
+        }
+        
+        matchedTraj = MatchedTraj(isSuccess: isSuccess, xyd: xyd, minTrajectory: minTrajectory, minTrajectoryOriginal: minTrajectoryOriginal)
+        
+        return matchedTraj
+    }
+    
+    public func extractMinSuccessfulMatchedTraj(_ matchedTrajs: [MatchedTraj]) -> MatchedTraj? {
+        var minSuccessfulMatchedTraj: MatchedTraj? = nil
+        var minSecondIndexValue: Double = Double.infinity
+
+        for matchedTraj in matchedTrajs {
+            if matchedTraj.isSuccess && matchedTraj.xyd.count > 1 {
+                let secondIndexValue = matchedTraj.xyd[1]
+                if secondIndexValue < minSecondIndexValue {
+                    minSecondIndexValue = secondIndexValue
+                    minSuccessfulMatchedTraj = matchedTraj
+                }
+            }
+        }
+
+        return minSuccessfulMatchedTraj
+    }
+
     
     func getPathMatchingHeadings(building: String, level: String, x: Double, y: Double, heading: Double, RANGE: Double, mode: String) -> [Double] {
         var headings: [Double] = []
@@ -5193,20 +5824,17 @@ public class ServiceManager: Observation {
                 }
             }
         }
-        
-        
         return headings
     }
-    
+
     func checkHeadingCorrection(buffer: [Double]) -> Bool {
         if (buffer.count >= HEADING_BUFFER_SIZE) {
             let firstHeading: Double = buffer.first ?? 0.0
-            let lastHeading: Double = buffer.last ?? 0.0
-
+            let lastHeading: Double = buffer.last ?? 10.0
             self.headingBuffer.removeFirst()
 
-            let diffHeading: Double = abs(lastHeading - firstHeading)
-            if (diffHeading < 5.0) {
+            let diffHeadingLastFirst: Double = abs(lastHeading - firstHeading)
+            if (diffHeadingLastFirst < 5.0) {
                 return true
             } else {
                 return false
@@ -5220,9 +5848,9 @@ public class ServiceManager: Observation {
         if (mode == "pdr") {
             self.requestIndex = self.requestIndexPdr
             self.USER_TRAJECTORY_LENGTH = self.USER_TRAJECTORY_DIAGONAL
-            self.kalmanR = 5 // 0.5
+            self.kalmanR = 2 // 0.5
             self.INIT_INPUT_NUM = 3
-            self.VALUE_INPUT_NUM = 11
+            self.VALUE_INPUT_NUM = 6 // 11
             self.SQUARE_RANGE = self.SQUARE_RANGE_SMALL
             
             if (phase == 4) {
@@ -5250,6 +5878,43 @@ public class ServiceManager: Observation {
         }
     }
     
+    func propagateUsingUvd(drBuffer: [UnitDRInfo], result: FineLocationTrackingFromServer) -> (Bool, [Double]) {
+        var isSuccess: Bool = false
+        var propagationValues: [Double] = [0, 0, 0]
+        let resultIndex = result.index
+        var matchedIndex: Int = -1
+        
+        for i in 0..<drBuffer.count {
+            let drBufferIndex = drBuffer[i].index
+            if (drBufferIndex == resultIndex) {
+                matchedIndex = i
+            }
+        }
+        
+        var dx: Double = 0
+        var dy: Double = 0
+        var dh: Double = 0
+        
+        if (matchedIndex != -1) {
+            let drBuffrerFromIndex = sliceArray(drBuffer, startingFrom: matchedIndex)
+            let headingCompensation: Double = result.absolute_heading - drBuffrerFromIndex[0].heading
+            var headingBuffer = [Double]()
+            for i in 0..<drBuffrerFromIndex.count {
+                let compensatedHeading = compensateHeading(heading: drBuffrerFromIndex[i].heading + headingCompensation)
+                headingBuffer.append(compensatedHeading)
+                
+                dx += drBuffrerFromIndex[i].length * cos(compensatedHeading*D2R)
+                dy += drBuffrerFromIndex[i].length * sin(compensatedHeading*D2R)
+            }
+            dh = headingBuffer[headingBuffer.count-1] - headingBuffer[0]
+            
+            isSuccess = true
+            propagationValues = [dx, dy, dh]
+//            print(getLocalTimeString() + " , Propagation : resultIndex = \(resultIndex) , drBuffer = \(drBuffrerFromIndex) , propagationValues = \(propagationValues)")
+        }
+        
+        return (isSuccess, propagationValues)
+    }
     
     
     // Kalman Filter
@@ -5266,8 +5931,8 @@ public class ServiceManager: Observation {
     func timeUpdate(length: Double, diffHeading: Double, mobileTime: Int, isNeedHeadingCorrection: Bool, drBuffer: [UnitDRInfo], runMode: String) -> FineLocationTrackingFromServer {
         updateHeading = timeUpdatePosition.heading + diffHeading
         
-        let dx = length*cos(updateHeading*D2R)
-        let dy = length*sin(updateHeading*D2R)
+        var dx = length*cos(updateHeading*D2R)
+        var dy = length*sin(updateHeading*D2R)
         
         timeUpdatePosition.x = timeUpdatePosition.x + dx
         timeUpdatePosition.y = timeUpdatePosition.y + dy
@@ -5278,6 +5943,46 @@ public class ServiceManager: Observation {
         let levelName = removeLevelDirectionString(levelName: timeUpdateOutput.level_name)
         let compensatedHeading = compensateHeading(heading: timeUpdateCopy.heading)
         if (runMode != "pdr") {
+//            let isDrStraight: Bool = isDrBufferStraight(drBuffer: drBuffer)
+//            if ((self.unitDrInfoIndex%2) == 0 && !isDrStraight) {
+//                let drBufferForPathMatching = Array(drBuffer.suffix(DR_BUFFER_SIZE_FOR_STRAIGHT))
+//                let pathTrajMatchingResult = self.extendedPathTrajectoryMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, pastResult: self.jupiterResult, drBuffer: drBufferForPathMatching, HEADING_RANGE: HEADING_RANGE, pathType: 1, mode: self.runMode)
+//                if (pathTrajMatchingResult.isSuccess) {
+//                    timeUpdatePosition.x = timeUpdatePosition.x*0.5 + pathTrajMatchingResult.xyd[0]*0.5
+//                    timeUpdatePosition.y = timeUpdatePosition.y*0.5 + pathTrajMatchingResult.xyd[1]*0.5
+//                    displayOutput.trajectoryPm = pathTrajMatchingResult.minTrajectory
+//                    displayOutput.trajectoryOg = pathTrajMatchingResult.minTrajectoryOriginal
+//                } else {
+//                    displayOutput.trajectoryPm = [[0,0]]
+//                    displayOutput.trajectoryOg = [[0,0]]
+//                }
+//            } else {
+//                var correctedTuCopy = (true, [timeUpdateCopy.x, timeUpdateCopy.y, timeUpdateCopy.heading])
+//                let pathMatchingResult = self.pathMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
+//
+//                correctedTuCopy.0 = pathMatchingResult.isSuccess
+//                correctedTuCopy.1 = pathMatchingResult.xyh
+//                correctedTuCopy.1[2] = compensateHeading(heading: correctedTuCopy.1[2])
+//                if (correctedTuCopy.0) {
+//                    timeUpdateCopy.x = correctedTuCopy.1[0]
+//                    timeUpdateCopy.y = correctedTuCopy.1[1]
+//                    if (isNeedHeadingCorrection) {
+//                        timeUpdateCopy.heading = correctedTuCopy.1[2]
+//                    }
+//                    timeUpdatePosition = timeUpdateCopy
+//                } else {
+//                    correctedTuCopy.0 = pathMatchingResult.0
+//                    correctedTuCopy.1 = pathMatchingResult.1
+//
+//                    timeUpdateCopy.x = correctedTuCopy.1[0]
+//                    timeUpdateCopy.y = correctedTuCopy.1[1]
+//                    timeUpdatePosition = timeUpdateCopy
+//                }
+//
+//                displayOutput.trajectoryPm = [[0,0]]
+//                displayOutput.trajectoryOg = [[0,0]]
+//            }
+            
             var correctedTuCopy = (true, [timeUpdateCopy.x, timeUpdateCopy.y, timeUpdateCopy.heading])
             let pathMatchingResult = self.pathMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 1)
 
@@ -5292,29 +5997,33 @@ public class ServiceManager: Observation {
                 }
                 timeUpdatePosition = timeUpdateCopy
             } else {
-                let pathMatchingResult = self.pathMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, tuXY: [0,0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: false, pathType: 1)
-                
                 correctedTuCopy.0 = pathMatchingResult.0
                 correctedTuCopy.1 = pathMatchingResult.1
-                
+
                 timeUpdateCopy.x = correctedTuCopy.1[0]
                 timeUpdateCopy.y = correctedTuCopy.1[1]
                 timeUpdatePosition = timeUpdateCopy
             }
         } else {
-            let isDrStraight: Bool = isDrBufferStraight(drBuffer: drBuffer)
-            if ((self.unitDrInfoIndex%2) == 0 && !isDrStraight) {
-                let pathTrajMatchingResult = self.pathTrajectoryMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, pastResult: self.jupiterResult, drBuffer: drBuffer, HEADING_RANGE: HEADING_RANGE, pathType: 0)
-                if (pathTrajMatchingResult.isSuccess) {
-                    timeUpdatePosition.x = timeUpdatePosition.x*0.5 + pathTrajMatchingResult.xyd[0]*0.5
-                    timeUpdatePosition.y = timeUpdatePosition.y*0.5 + pathTrajMatchingResult.xyd[1]*0.5
-                    displayOutput.trajectoryPm = pathTrajMatchingResult.minTrajectory
-                } else {
-                    displayOutput.trajectoryPm = [[0,0]]
-                }
-            } else {
-                displayOutput.trajectoryPm = [[0,0]]
-            }
+//            let isDrStraight: Bool = isDrBufferStraight(drBuffer: drBuffer)
+//            if ((self.unitDrInfoIndex%2) == 0 && !isDrStraight) {
+//                let drBufferForPathMatching = Array(drBuffer.suffix(DR_BUFFER_SIZE_FOR_STRAIGHT))
+//                let pathTrajMatchingResult = self.extendedPathTrajectoryMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, pastResult: self.jupiterResult, drBuffer: drBufferForPathMatching, HEADING_RANGE: HEADING_RANGE, pathType: 0, mode: self.runMode)
+//                if (pathTrajMatchingResult.isSuccess) {
+//                    timeUpdatePosition.x = timeUpdatePosition.x*0.5 + pathTrajMatchingResult.xyd[0]*0.5
+//                    timeUpdatePosition.y = timeUpdatePosition.y*0.5 + pathTrajMatchingResult.xyd[1]*0.5
+//                    displayOutput.trajectoryPm = pathTrajMatchingResult.minTrajectory
+//                    displayOutput.trajectoryOg = pathTrajMatchingResult.minTrajectoryOriginal
+//                    let ratio: Double = self.calTrajectoryRatio(trajPm: pathTrajMatchingResult.minTrajectory, trajOg: pathTrajMatchingResult.minTrajectoryOriginal)
+//                    self.scCompensationArray = [ratio]
+//                } else {
+//                    displayOutput.trajectoryPm = [[0,0]]
+//                    displayOutput.trajectoryOg = [[0,0]]
+//                }
+//            } else {
+//                displayOutput.trajectoryPm = [[0,0]]
+//                displayOutput.trajectoryOg = [[0,0]]
+//            }
         }
         
         kalmanP += kalmanQ
@@ -5355,16 +6064,17 @@ public class ServiceManager: Observation {
             serverOutputHatMm.y = serverOutputHatCopyMm.1[1]
             if (isNeedHeadingCorrection) {
                 serverOutputHatMm.absolute_heading = serverOutputHatCopyMm.1[2]
-                if (timeUpdateHeadingCopy >= 270 && (serverOutputHatMm.absolute_heading >= 0 && serverOutputHatMm.absolute_heading < 90)) {
-                    serverOutputHatMm.absolute_heading = serverOutputHatMm.absolute_heading + 360
-                } else if (serverOutputHatMm.absolute_heading >= 270 && (timeUpdateHeadingCopy >= 0 && timeUpdateHeadingCopy < 90)) {
-                    timeUpdateHeadingCopy = timeUpdateHeadingCopy + 360
-                }
             } else {
                 serverOutputHatMm.absolute_heading = serverOutputHatCopy.absolute_heading
             }
         } else {
             serverOutputHatMm.absolute_heading = originalResult[2]
+        }
+        
+        if (timeUpdateHeadingCopy >= 270 && (serverOutputHatMm.absolute_heading >= 0 && serverOutputHatMm.absolute_heading < 90)) {
+            serverOutputHatMm.absolute_heading = serverOutputHatMm.absolute_heading + 360
+        } else if (serverOutputHatMm.absolute_heading >= 270 && (timeUpdateHeadingCopy >= 0 && timeUpdateHeadingCopy < 90)) {
+            timeUpdateHeadingCopy = timeUpdateHeadingCopy + 360
         }
         
         measurementOutput = serverOutputHatMm
