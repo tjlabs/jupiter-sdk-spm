@@ -368,13 +368,6 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-            // [http 요청 수행 실시]
-    //        print("")
-    //        print("====================================")
-    //        print("PUT BIAS 데이터 :: ", input)
-    //        print("====================================")
-    //        print("")
-            
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
             sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_PUT
@@ -403,11 +396,6 @@ public class NetworkManager {
 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-    //                print("")
-    //                print("====================================")
-    //                print("RESPONSE BIAS 데이터 :: ", resultCode)
-    //                print("====================================")
-    //                print("")
                     completion(resultCode, "(Jupiter) Success Send RSSI Bias")
                 }
             })
@@ -493,15 +481,7 @@ public class NetworkManager {
             sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
             let session = URLSession(configuration: sessionConfig)
             let dataTask = session.dataTask(with: requestURL, completionHandler: { (data, response, error) in
-                
-    //            print("")
-    //            print("====================================")
-    //            print("RESPONSE CLE 데이터 :: ", data)
-    //            print("RESPONSE CLE 데이터 :: ", response)
-    //            print("RESPONSE CLE 데이터 :: ", error)
-    //            print("====================================")
-    //            print("")
-                
+                     
                 // [error가 존재하면 종료]
                 guard error == nil else {
                     // [콜백 반환]
@@ -685,13 +665,6 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-//            print("")
-//            print("====================================")
-//            print("POST MOCK URL :: ", url)
-//            print("POST MOCK 데이터 :: ", input)
-//            print("====================================")
-//            print("")
-            
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
             sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
@@ -812,12 +785,6 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-//            print("")
-//            print("====================================")
-//            print("POST OSR 데이터 :: ", input)
-//            print("====================================")
-//            print("")
-
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
             sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
@@ -854,12 +821,6 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE OSR 데이터 :: ", resultCode)
-//                    print("                 :: ", resultData)
-//                    print("====================================")
-//                    print("")
                     completion(resultCode, resultData)
                 }
             })
@@ -885,13 +846,6 @@ public class NetworkManager {
             requestURL.httpBody = encodingData
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
-            
-//            print("")
-//            print("====================================")
-//            print("POST Geo URL :: ", url)
-//            print("POST Geo 데이터 :: ", input)
-//            print("====================================")
-//            print("")
             
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
@@ -929,12 +883,6 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Geo 데이터 :: ", resultCode)
-//                    print("                 :: ", resultData)
-//                    print("====================================")
-//                    print("")
                     completion(resultCode, resultData, buildingName, levelName)
                 }
             })
@@ -957,12 +905,6 @@ public class NetworkManager {
             requestURL.httpBody = encodingData
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
-            
-//            print("")
-//            print("====================================")
-//            print("POST Traj 데이터 :: ", input)
-//            print("====================================")
-//            print("")
             
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
@@ -1000,12 +942,6 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Traj 데이터 :: ", resultCode)
-//                    print("                 :: ", resultData)
-//                    print("====================================")
-//                    print("")
                     completion(resultCode, resultData)
                 }
             })
@@ -1026,13 +962,6 @@ public class NetworkManager {
         
         requestURL.httpMethod = "GET"
         
-//        print("")
-//        print("====================================")
-//        print("GET Bias URL :: ", url)
-//        print("GET Bias 데이터 :: ", input)
-//        print("====================================")
-//        print("")
-        
         let sessionConfig = URLSessionConfiguration.default
         sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
         sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
@@ -1069,12 +998,6 @@ public class NetworkManager {
             
             // [콜백 반환]
             DispatchQueue.main.async {
-//                print("")
-//                print("====================================")
-//                print("RESPONSE Bias 데이터 :: ", resultCode)
-//                print("                 :: ", resultData)
-//                print("====================================")
-//                print("")
                 completion(resultCode, resultData)
             }
         })
@@ -1091,12 +1014,6 @@ public class NetworkManager {
         
         requestURL.httpMethod = "GET"
         
-//        print("")
-//        print("====================================")
-//        print("GET Bias URL (Device) :: ", url)
-//        print("GET Bias 데이터  (Device) :: ", input)
-//        print("====================================")
-//        print("")
         
         let sessionConfig = URLSessionConfiguration.default
         sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
@@ -1134,12 +1051,6 @@ public class NetworkManager {
             
             // [콜백 반환]
             DispatchQueue.main.async {
-//                print("")
-//                print("====================================")
-//                print("RESPONSE Bias 데이터 (Device) :: ", resultCode)
-//                print("                 :: ", resultData)
-//                print("====================================")
-//                print("")
                 completion(resultCode, resultData)
             }
         })
@@ -1159,14 +1070,6 @@ public class NetworkManager {
             requestURL.httpBody = encodingData
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
-            
-            // [http 요청 수행 실시]
-//            print("")
-//            print("====================================")
-//            print("POST Param URL :: ", url)
-//            print("POST Param 데이터 :: ", input)
-//            print("====================================")
-//            print("")
             
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
@@ -1196,11 +1099,6 @@ public class NetworkManager {
 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Param 데이터 :: ", resultCode)
-//                    print("====================================")
-//                    print("")
                     completion(resultCode, "(Jupiter) Success Send Bias")
                 }
             })
@@ -1254,11 +1152,6 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Debug 데이터 :: ", resultCode)
-//                    print("====================================")
-//                    print("")
                     completion(resultCode, resultData)
                 }
             })
@@ -1282,13 +1175,6 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-//            print("")
-//            print("====================================")
-//            print("POST Mobile Result URL :: ", url)
-//            print("POST Mobile Result 데이터 :: ", input)
-//            print("====================================")
-//            print("")
-            
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
             sessionConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_POST
@@ -1321,11 +1207,6 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Mobile Result 데이터 :: ", resultCode)
-//                    print("====================================")
-//                    print("")
                     completion(resultCode, resultData)
                 }
             })
@@ -1349,12 +1230,6 @@ public class NetworkManager {
             requestURL.addValue("application/json", forHTTPHeaderField: "Content-Type")
             requestURL.setValue("\(encodingData)", forHTTPHeaderField: "Content-Length")
             
-//            print("")
-//            print("====================================")
-//            print("POST Mobile Report URL :: ", url)
-//            print("POST Mobile Report 데이터 :: ", input)
-//            print("====================================")
-//            print("")
             
             let sessionConfig = URLSessionConfiguration.default
             sessionConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
@@ -1388,11 +1263,6 @@ public class NetworkManager {
                 
                 // [콜백 반환]
                 DispatchQueue.main.async {
-//                    print("")
-//                    print("====================================")
-//                    print("RESPONSE Mobile Report 데이터 :: ", resultCode)
-//                    print("====================================")
-//                    print("")
                     completion(resultCode, resultData)
                 }
             })

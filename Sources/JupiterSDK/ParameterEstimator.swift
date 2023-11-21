@@ -2,13 +2,15 @@ import Foundation
 
 
 public class ParameterEstimator {
-    
     var entranceWardRssi = [String: Double]()
     var allEntranceWardRssi = [String: Double]()
     
     var wardMinRssi = [Double]()
     var wardMaxRssi = [Double]()
     var deviceMinValue: Double = -99.0
+    var updateMinArrayCount: Int = 0
+    var updateMaxArrayCount: Int = 0
+    let ARRAY_SIZE: Int = 3
     
     var preSmoothedNormalizationScale: Double = 1.0
     var scaleQueue = [Double]()
@@ -17,7 +19,6 @@ public class ParameterEstimator {
         self.entranceWardRssi = [String: Double]()
         self.allEntranceWardRssi = [String: Double]()
     }
-
     
     public func refreshWardMinRssi(bleData: [String: Double]) {
         for (_, value) in bleData {
@@ -25,7 +26,7 @@ public class ParameterEstimator {
                 if (self.wardMinRssi.isEmpty) {
                     self.wardMinRssi.append(value)
                 } else {
-                    let newArray = appendAndKeepMinThree(inputArray: self.wardMinRssi, newValue: value)
+                    let newArray = appendAndKeepMin(inputArray: self.wardMinRssi, newValue: value, size: self.ARRAY_SIZE)
                     self.wardMinRssi = newArray
                 }
             }
@@ -37,26 +38,28 @@ public class ParameterEstimator {
             if (self.wardMaxRssi.isEmpty) {
                 self.wardMaxRssi.append(value)
             } else {
-                let newArray = appendAndKeepMaxThree(inputArray: self.wardMaxRssi, newValue: value)
+                let newArray = appendAndKeepMax(inputArray: self.wardMaxRssi, newValue: value, size: self.ARRAY_SIZE)
                 self.wardMaxRssi = newArray
             }
         }
     }
     
-    public func calNormalizationScale(standardMin: Double, standardMax: Double) -> Double {
+    public func calNormalizationScale(standardMin: Double, standardMax: Double) -> (Bool, Double) {
         let standardAmplitude: Double = abs(standardMax - standardMin)
         
-        let avgMax = self.wardMaxRssi.average
-        let avgMin = self.wardMinRssi.average
-        self.deviceMinValue = avgMin
-        
-        let amplitude: Double = abs(avgMax - avgMin)
-        
-        let normalizationScale: Double = standardAmplitude/amplitude
-        updateScaleQueue(data: normalizationScale)
-//        print(getLocalTimeString() + " , (Normalization) : Scale = \(normalizationScale)")
-        
-        return normalizationScale
+        if (self.wardMaxRssi.isEmpty || self.wardMinRssi.isEmpty) {
+            return (false, 1.0)
+        } else {
+            let avgMax = self.wardMaxRssi.average
+            let avgMin = self.wardMinRssi.average
+            self.deviceMinValue = avgMin
+            
+            let amplitude: Double = abs(avgMax - avgMin)
+            
+            let normalizationScale: Double = standardAmplitude/amplitude
+            updateScaleQueue(data: normalizationScale)
+            return (true, normalizationScale)
+        }
     }
     
     func updateScaleQueue(data: Double) {
@@ -74,7 +77,6 @@ public class ParameterEstimator {
             smoothedScale = movingAverage(preMvalue: self.preSmoothedNormalizationScale, curValue: scale, windowSize: self.scaleQueue.count)
         }
         self.preSmoothedNormalizationScale = smoothedScale
-//        print(getLocalTimeString() + " , (Normalization) : smoothedScale = \(smoothedScale)")
         
         return smoothedScale
     }
@@ -124,7 +126,7 @@ public class ParameterEstimator {
             if let entranceData = entranceWard[key] {
                 let entranceWardRssi = Double(entranceData)
                 let diffRssi = entranceWardRssi - value
-                print(getLocalTimeString() + " , (Jupiter) Bias in Entrance : \(key) = \(diffRssi)")
+//                print(getLocalTimeString() + " , (Jupiter) Bias in Entrance : \(key) = \(diffRssi)")
                 diffRssiArray.append(diffRssi)
             }
         }
@@ -139,8 +141,7 @@ public class ParameterEstimator {
             } else {
                 result = biasWithOutMax
             }
-            
-            print(getLocalTimeString() + " , (Jupiter) Bias in Entrance : Bias = \(result)")
+//            print(getLocalTimeString() + " , (Jupiter) Bias in Entrance : Bias = \(result)")
         }
         
         return result
@@ -359,10 +360,10 @@ public class ParameterEstimator {
         return result
     }
     
-    func appendAndKeepMinThree(inputArray: [Double], newValue: Double) -> [Double] {
+    func appendAndKeepMin(inputArray: [Double], newValue: Double, size: Int) -> [Double] {
         var array: [Double] = inputArray
         array.append(newValue)
-        if array.count > 3 {
+        if array.count > size {
             if let maxValue = array.max() {
                 if let index = array.firstIndex(of: maxValue) {
                     array.remove(at: index)
@@ -372,18 +373,49 @@ public class ParameterEstimator {
         return array
     }
     
-    func appendAndKeepMaxThree(inputArray: [Double], newValue: Double) -> [Double] {
+    func appendAndKeepMax(inputArray: [Double], newValue: Double, size: Int) -> [Double] {
         var array: [Double] = inputArray
         array.append(newValue)
         
-        if array.count > 3 {
+        if array.count > size {
             if let minValue = array.min() {
                 if let index = array.firstIndex(of: minValue) {
                     array.remove(at: index)
                 }
             }
         }
-        
+        return array
+    }
+    
+    func updateWardMinRss(inputArray: [Double], size: Int) -> [Double] {
+        var array: [Double] = inputArray
+//        print(getLocalTimeString() + " , (Jupiter) Ward Min : input = \(inputArray)")
+        if array.count < size {
+            return array
+        } else {
+            if let minValue = array.min() {
+                if let index = array.firstIndex(of: minValue) {
+                    array.remove(at: index)
+                }
+            }
+        }
+//        print(getLocalTimeString() + " , (Jupiter) Ward Min : result = \(array)")
+        return array
+    }
+    
+    func updateWardMaxRss(inputArray: [Double], size: Int) -> [Double] {
+        var array: [Double] = inputArray
+//        print(getLocalTimeString() + " , (Jupiter) Ward Max : input = \(inputArray)")
+        if array.count < size {
+            return array
+        } else {
+            if let maxValue = array.max() {
+                if let index = array.firstIndex(of: maxValue) {
+                    array.remove(at: index)
+                }
+            }
+        }
+//        print(getLocalTimeString() + " , (Jupiter) Ward Max : result = \(array)")
         return array
     }
     
@@ -396,4 +428,3 @@ public class ParameterEstimator {
         return self.deviceMinValue
     }
 }
-

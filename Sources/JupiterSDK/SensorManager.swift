@@ -155,7 +155,7 @@ public class SensorManager {
 //            sensorActive += 1
             motionAltimeter.startRelativeAltitudeUpdates(to: .main) { [self] (data, error) in
                 if let pressure = data?.pressure {
-                    let pressure_: Double = Double(pressure)*10
+                    let pressure_: Double = round(Double(pressure)*10*100)/100
                     self.pressure = pressure_
                     sensorData.pressure[0] = pressure_
                     collectData.pressure[0] = pressure_

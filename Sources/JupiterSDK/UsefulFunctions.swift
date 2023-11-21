@@ -90,6 +90,19 @@ public func compensateHeading(heading: Double) -> Double {
     return headingToReturn
 }
 
+public func checkIsSimilarXyh(input: [Double]) -> Bool {
+    var dh = input[2]
+    if (dh >= 270) {
+        dh = 360 - dh
+    }
+    
+    if (dh < 20) {
+        return true
+    } else {
+        return false
+    }
+}
+
 public func checkDiagonal(userTrajectory: [TrajectoryInfo], DIAGONAL_CONDITION: Double) -> [TrajectoryInfo] {
     var accumulatedDiagonal = 0.0
     
@@ -123,6 +136,62 @@ public func checkDiagonal(userTrajectory: [TrajectoryInfo], DIAGONAL_CONDITION: 
         }
     }
     
+    return userTrajectory
+}
+
+public func checkAccumulatedLength(userTrajectory: [TrajectoryInfo], LENGTH_CONDITION: Double) -> [TrajectoryInfo] {
+    var accumulatedLength = 0.0
+
+    var longTrajIndex: Int = 0
+    var isFindLong: Bool = false
+    var shortTrajIndex: Int = 0
+    var isFindShort: Bool = false
+
+    if (!userTrajectory.isEmpty) {
+        let startHeading = userTrajectory[0].heading
+        let headInfo = userTrajectory[userTrajectory.count-1]
+        var xyFromHead: [Double] = [headInfo.userX, headInfo.userY]
+
+        var headingFromHead = [Double] (repeating: 0, count: userTrajectory.count)
+        for i in 0..<userTrajectory.count {
+            headingFromHead[i] = compensateHeading(heading: userTrajectory[i].heading  - 180 - startHeading)
+        }
+
+        var trajectoryFromHead = [[Double]]()
+        trajectoryFromHead.append(xyFromHead)
+        for i in (1..<userTrajectory.count).reversed() {
+            let headAngle = headingFromHead[i]
+            let uvdLength = userTrajectory[i].length
+            accumulatedLength += uvdLength
+
+            if ((accumulatedLength >= LENGTH_CONDITION*2) && !isFindLong) {
+                isFindLong = true
+                longTrajIndex = i
+            }
+
+            if ((accumulatedLength >= LENGTH_CONDITION) && !isFindShort) {
+                isFindShort = true
+                shortTrajIndex = i
+            }
+
+            xyFromHead[0] = xyFromHead[0] + uvdLength*cos(headAngle*D2R)
+            xyFromHead[1] = xyFromHead[1] + uvdLength*sin(headAngle*D2R)
+            trajectoryFromHead.append(xyFromHead)
+        }
+
+        let trajectoryMinMax = getMinMaxValues(for: trajectoryFromHead)
+        let width = trajectoryMinMax[2] - trajectoryMinMax[0]
+        let height = trajectoryMinMax[3] - trajectoryMinMax[1]
+
+        if (width <= 3 || height <= 3) {
+            let newTrajectory = getTrajectoryForDiagonal(from: userTrajectory, N: longTrajIndex)
+            return newTrajectory
+        } else {
+            let newTrajectory = getTrajectoryForDiagonal(from: userTrajectory, N: shortTrajIndex)
+            return newTrajectory
+        }
+    }
+
     return userTrajectory
 }
 
@@ -271,17 +340,68 @@ public func getSearchCoordinates(areaMinMax: [Double], interval: Double) -> [[Do
     return coordinates
 }
 
+public func convertToValidSearchRange(inputRange: [Int], pathPointMinMax: [Double]) -> [Int] {
+    var searchRange = inputRange
+    
+    let minMax: [Int] = pathPointMinMax.map { Int($0) }
+    if (pathPointMinMax.isEmpty) {
+        return searchRange
+    }
+    if (pathPointMinMax[0] == 0 && pathPointMinMax[1] == 0 && pathPointMinMax[2] == 0 && pathPointMinMax[3] == 0) {
+        return searchRange
+    }
+    
+    // Check isValid
+    if (inputRange[0] < minMax[0]) {
+        let diffX = minMax[0] - inputRange[0]
+        searchRange[0] = minMax[0]
+        
+        searchRange[2] = inputRange[2] + Int(Double(diffX)*0.5)
+        if (searchRange[2] > minMax[2]) {
+            searchRange[2] = minMax[2]
+        }
+    }
+    
+    if (inputRange[1] < minMax[1]) {
+        let diffY = minMax[1] - inputRange[1]
+        searchRange[1] = minMax[1]
+        
+        searchRange[3] = inputRange[3] + Int(Double(diffY)*0.5)
+        if (searchRange[3] > minMax[3]) {
+            searchRange[3] = minMax[3]
+        }
+    }
+    
+    if (inputRange[2] > minMax[2]) {
+        let diffX = inputRange[2] - minMax[2]
+        searchRange[2] = minMax[2]
+        
+        searchRange[0] = inputRange[0] - Int(Double(diffX)*0.5)
+        if (searchRange[0] < minMax[0]) {
+            searchRange[0] = minMax[0]
+        }
+    }
+    
+    if (inputRange[3] > minMax[3]) {
+        let diffY = inputRange[3] - minMax[3]
+        searchRange[3] = minMax[3]
+        
+        searchRange[1] = inputRange[1] - Int(Double(diffY)*0.5)
+        if (searchRange[1] < minMax[1]) {
+            searchRange[1] = minMax[1]
+        }
+    }
+    
+    return searchRange
+}
+
 public func extractSectionWithLeastChange(inputArray: [Double]) -> [Double] {
     guard inputArray.count > 7 else {
         return []
     }
-
-    // Initialize variables to keep track of the best slice
     var bestSliceStartIndex = 0
     var bestSliceEndIndex = 0
-//    var bestSliceDifference = Double.greatestFiniteMagnitude
 
-    // Loop through the array to find the best slice
     for startIndex in 0..<(inputArray.count-6) {
         for endIndex in (startIndex+7)..<inputArray.count {
             let slice = Array(inputArray[startIndex...endIndex])
@@ -290,11 +410,9 @@ public func extractSectionWithLeastChange(inputArray: [Double]) -> [Double] {
             }
 
             let currentDifference = abs(maxSliceValue - minSliceValue)
-            // Check if the current slice meets the conditions
             if currentDifference < 5 && slice.count > bestSliceEndIndex - bestSliceStartIndex {
                 bestSliceStartIndex = startIndex
                 bestSliceEndIndex = endIndex
-//                bestSliceDifference = currentDifference
             }
         }
     }
