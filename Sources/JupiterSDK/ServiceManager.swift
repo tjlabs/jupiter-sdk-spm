@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.2.6"
+    public static let sdkVersion: String = "3.2.7"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -486,7 +486,7 @@ public class ServiceManager: Observation {
         
         var countBuildingLevel: Int = 0
         
-        let numInput = 3
+        let numInput = 2
         let interval: Double = 1/2
         self.RFD_INPUT_NUM = numInput
         self.RFD_INTERVAL = interval
@@ -1686,12 +1686,6 @@ public class ServiceManager: Observation {
                 }
             }
             
-//            self.bleAvg = ["TJ-00CB-0000038C-0000":-76.0] // COEX B2 <-> B3
-//            self.bleAvg = ["TJ-00CB-0000030D-0000":-76.0] // COEX B2
-//            self.bleAvg = ["TJ-00CB-00000242-0000":-76.0] // S3 7F
-//            self.bleAvg = ["TJ-00CB-000003E7-0000":-76.0] // Plan Group
-//            self.bleAvg = ["TJ-00CB-00000407-0000":-76.0] // Dabeeo 8F
-            
             paramEstimator.refreshWardMinRssi(bleData: self.bleAvg)
             paramEstimator.refreshWardMaxRssi(bleData: self.bleAvg)
             if (self.isGetFirstResponse && self.isIndoor && self.indexAfterResponse >= 30 && (self.unitDrInfoIndex%5 == 0)) {
@@ -1756,7 +1750,7 @@ public class ServiceManager: Observation {
                     inputReceivedForce.append(data)
                     if ((inputReceivedForce.count-1) >= RFD_INPUT_NUM) {
                         inputReceivedForce.remove(at: 0)
-                        NetworkManager.shared.postReceivedForce(url: RF_URL, input: inputReceivedForce, completion: { [self] statusCode, returnedString in
+                        NetworkManager.shared.postReceivedForce(url: RF_URL, input: inputReceivedForce, completion: { [self] statusCode, returnedString, inputRfd  in
                             if (statusCode != 200) {
                                 let localTime = getLocalTimeString()
                                 let log: String = localTime + " , (Jupiter) Error : RFD \(statusCode) " + returnedString
@@ -2080,7 +2074,7 @@ public class ServiceManager: Observation {
                 // Put UV
                 if ((inputUserVelocity.count-1) >= UVD_INPUT_NUM) {
                     inputUserVelocity.remove(at: 0)
-                    NetworkManager.shared.postUserVelocity(url: UV_URL, input: inputUserVelocity, completion: { [self] statusCode, returnedString in
+                    NetworkManager.shared.postUserVelocity(url: UV_URL, input: inputUserVelocity, completion: { [self] statusCode, returnedString, inputUvd in
                         if (statusCode == 200) {
                             self.pastTuResult = self.currentTuResult
                             self.indexSend = Int(returnedString) ?? 0

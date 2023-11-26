@@ -324,6 +324,7 @@ public struct CoarseLocationEstimationResult: Codable {
 }
 
 
+
 // Fine Location Tracking
 struct FineLocationTracking: Encodable {
     var user_id: String
@@ -338,6 +339,14 @@ struct FineLocationTracking: Encodable {
     var device_min_rss: Int
     var sc_compensation_list: [Double]
     var tail_index: Int
+}
+
+public struct FineLocationTrackingListFromServer: Codable {
+    public var flt_outputs: [FineLocationTrackingFromServer]
+    
+    public init() {
+        self.flt_outputs = []
+    }
 }
 
 public struct FineLocationTrackingFromServer: Codable {
