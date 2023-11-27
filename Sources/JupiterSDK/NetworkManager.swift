@@ -5,23 +5,38 @@ public class NetworkManager {
     let TIMEOUT_VALUE_PUT: Double = 5.0
     let TIMEOUT_VALUE_POST: Double = 5.0
     
-    let rfdSession: URLSession
-    let uvdSession: URLSession
+    let rfdSession1: URLSession
+    let rfdSession2: URLSession
+    var rfdSessionCount: Int = 0
+    
+    let uvdSession1: URLSession
+    let uvdSession2: URLSession
+    var uvdSessionCount: Int = 0
+    
     let osrSession: URLSession
     let fltSession: URLSession
     let resultSession: URLSession
     let reportSession: URLSession
     
+    var rfdSessions = [URLSession]()
+    var uvdSessions = [URLSession]()
+    
     init() {
         let rfdConfig = URLSessionConfiguration.default
         rfdConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
         rfdConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_PUT
-        self.rfdSession = URLSession(configuration: rfdConfig)
+        self.rfdSession1 = URLSession(configuration: rfdConfig)
+        self.rfdSession2 = URLSession(configuration: rfdConfig)
+        self.rfdSessions.append(self.rfdSession1)
+        self.rfdSessions.append(self.rfdSession2)
         
         let uvdConfig = URLSessionConfiguration.default
         uvdConfig.timeoutIntervalForResource = TIMEOUT_VALUE_PUT
         uvdConfig.timeoutIntervalForRequest = TIMEOUT_VALUE_PUT
-        self.uvdSession = URLSession(configuration: uvdConfig)
+        self.uvdSession1 = URLSession(configuration: uvdConfig)
+        self.uvdSession2 = URLSession(configuration: uvdConfig)
+        self.uvdSessions.append(self.uvdSession1)
+        self.uvdSessions.append(self.uvdSession2)
         
         let osrConfig = URLSessionConfiguration.default
         osrConfig.timeoutIntervalForResource = TIMEOUT_VALUE_POST
@@ -291,8 +306,9 @@ public class NetworkManager {
 //            print("POST RF 데이터 :: ", input)
 //            print("====================================")
 //            print("")
-            
-            let dataTask = self.rfdSession.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let rfdSession = self.rfdSessions[self.rfdSessionCount%2]
+            self.rfdSessionCount+=1
+            let dataTask = rfdSession.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 500
                 // [error가 존재하면 종료]
                 guard error == nil else {
@@ -365,7 +381,9 @@ public class NetworkManager {
     //        print("====================================")
     //        print("")
             
-            let dataTask = self.uvdSession.dataTask(with: requestURL, completionHandler: { (data, response, error) in
+            let uvdSession = self.uvdSessions[self.uvdSessionCount%2]
+            self.uvdSessionCount+=1
+            let dataTask = uvdSession.dataTask(with: requestURL, completionHandler: { (data, response, error) in
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 400
                 // [error가 존재하면 종료]
                 guard error == nil else {

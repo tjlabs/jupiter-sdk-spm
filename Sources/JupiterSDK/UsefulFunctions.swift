@@ -420,4 +420,75 @@ public func extractSectionWithLeastChange(inputArray: [Double]) -> [Double] {
     return Array(inputArray[bestSliceStartIndex...bestSliceEndIndex])
 }
 
+public func propagateUsingUvd(drBuffer: [UnitDRInfo], result: FineLocationTrackingFromServer) -> (Bool, [Double]) {
+    var isSuccess: Bool = false
+    var propagationValues: [Double] = [0, 0, 0]
+    let resultIndex = result.index
+    var matchedIndex: Int = -1
+    
+    for i in 0..<drBuffer.count {
+        let drBufferIndex = drBuffer[i].index
+        if (drBufferIndex == resultIndex) {
+            matchedIndex = i
+        }
+    }
+    
+    var dx: Double = 0
+    var dy: Double = 0
+    var dh: Double = 0
+    
+    if (matchedIndex != -1) {
+        let drBuffrerFromIndex = sliceArray(drBuffer, startingFrom: matchedIndex)
+        let headingCompensation: Double = result.absolute_heading - drBuffrerFromIndex[0].heading
+        var headingBuffer = [Double]()
+        for i in 0..<drBuffrerFromIndex.count {
+            let compensatedHeading = compensateHeading(heading: drBuffrerFromIndex[i].heading + headingCompensation)
+            headingBuffer.append(compensatedHeading)
+            
+            dx += drBuffrerFromIndex[i].length * cos(compensatedHeading*D2R)
+            dy += drBuffrerFromIndex[i].length * sin(compensatedHeading*D2R)
+        }
+        dh = headingBuffer[headingBuffer.count-1] - headingBuffer[0]
+        
+        isSuccess = true
+        propagationValues = [dx, dy, dh]
+    }
+    
+    return (isSuccess, propagationValues)
+}
+
+public func isResultHeadingStraight(drBuffer: [UnitDRInfo], result: FineLocationTrackingFromServer) -> Bool {
+    var isStraight: Bool = false
+    let resultIndex = result.index
+    
+    var matchedIndex: Int = -1
+    
+    for i in 0..<drBuffer.count {
+        let drBufferIndex = drBuffer[i].index
+        if (drBufferIndex == resultIndex) {
+            matchedIndex = i
+        }
+    }
+    
+    if (matchedIndex != -1 && matchedIndex >= 4) {
+        var startHeading: Double = 0
+        var endHeading: Double = 0
+        if (drBuffer.count < 5) {
+            startHeading = drBuffer[0].heading
+            endHeading = drBuffer[matchedIndex].heading
+        } else {
+            startHeading = drBuffer[matchedIndex-4].heading
+            endHeading = drBuffer[matchedIndex].heading
+        }
+        
+        if (abs(endHeading - startHeading) < 5.0) {
+            isStraight = true
+        } else {
+            isStraight = false
+        }
+    }
+    
+    return isStraight
+}
+
 

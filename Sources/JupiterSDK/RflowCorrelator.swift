@@ -102,7 +102,6 @@ public class RflowCorrelator {
     public func getRflowForVelocityScale() -> Double {
         var result: Double = 0
         
-        
         if (self.rfdVelocityBuffer.count >= self.rfdVelocityBufferLength) {
             let preRfdBuffer = sliceDictionaryArray(self.rfdVelocityBuffer, startIndex: self.rfdVelocityBufferLength-T_V-D_V, endIndex: self.rfdVelocityBufferLength-T_V-1)
             let curRfdBuffer = sliceDictionaryArray(self.rfdVelocityBuffer, startIndex: self.rfdVelocityBufferLength-D_V, endIndex: self.rfdVelocityBufferLength-1)
