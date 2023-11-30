@@ -227,6 +227,41 @@ public func calculateAccumulatedDiagonal(userTrajectory: [TrajectoryInfo]) -> Do
     return accumulatedDiagonal
 }
 
+public func isTrajectoryStraight(for array: [Double], size: Int, mode: String, conditionPdr: Int, conditionDr: Int) -> Int {
+    var CONDITON: Int = 10
+    if (mode == "pdr") {
+        CONDITON = conditionPdr
+    } else {
+        CONDITON = conditionDr
+    }
+    if (size < CONDITON) {
+        return 0
+    }
+    
+    let straightAngle: Double = 1.5
+    // All Straight
+    let circularStandardDeviationAll = circularStandardDeviation(for: array)
+    if (circularStandardDeviationAll <= straightAngle) {
+        return 1
+    }
+    
+    // Head Straight
+    let lastTenValues = Array(array[(size-CONDITON)..<size])
+    let circularStandardDeviationHead = circularStandardDeviation(for: lastTenValues)
+    if (circularStandardDeviationHead <= straightAngle) {
+        return 2
+    }
+    
+    // Tail Straight
+    let firstTenValues = Array(array[0..<CONDITON])
+    let circularStandardDeviationTail = circularStandardDeviation(for: firstTenValues)
+    if (circularStandardDeviationTail <= straightAngle) {
+        return 3
+    }
+    
+    return 0
+}
+
 public func getTrajectoryFromIndex(from userTrajectory: [TrajectoryInfo], index: Int) -> [TrajectoryInfo] {
     var result: [TrajectoryInfo] = []
     

@@ -385,6 +385,8 @@ public struct FineLocationTrackingResult: Codable {
     public var mode: String
     public var ble_only_position: Bool
     public var isIndoor: Bool
+//    public var validity: Bool
+//    public var message: String
     
     public init() {
         self.mobile_time = 0
@@ -401,6 +403,8 @@ public struct FineLocationTrackingResult: Codable {
         self.mode = ""
         self.ble_only_position = false
         self.isIndoor = false
+//        self.validity = true
+//        self.message = ""
     }
 }
 
