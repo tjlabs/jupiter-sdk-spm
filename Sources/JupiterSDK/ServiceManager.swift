@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.3.4"
+    public static let sdkVersion: String = "3.3.5"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -1677,6 +1677,7 @@ public class ServiceManager: Observation {
                                 
                                 let result = findResult.1
                                 
+                                self.outputResult.phase = 3
                                 self.outputResult.building_name = result.building_name
                                 self.outputResult.level_name = result.level_name
                                 self.outputResult.isIndoor = self.isIndoor
@@ -6013,6 +6014,7 @@ public class ServiceManager: Observation {
                 
                 measurementOutput.x = measurementOutputCorrected.1[0]
                 measurementOutput.y = measurementOutputCorrected.1[1]
+                measurementOutput.absolute_heading = measurementOutputCorrected.1[2]
                 updateHeading = measurementOutputCorrected.1[2]
                 
                 backKalmanParam()
@@ -6025,13 +6027,16 @@ public class ServiceManager: Observation {
                 
                 if (isNeedHeadingCorrection) {
                     self.timeUpdatePosition.heading = measurementOutputCorrected.1[2]
+                    measurementOutput.absolute_heading = measurementOutputCorrected.1[2]
                     updateHeading = measurementOutputCorrected.1[2]
                 } else {
                     if (mode == "pdr") {
                         self.timeUpdatePosition.heading = measurementOutputCorrected.1[2]
+                        measurementOutput.absolute_heading = measurementOutputCorrected.1[2]
                         updateHeading = measurementOutputCorrected.1[2]
                     } else {
                         self.timeUpdatePosition.heading = timeUpdateHeadingCopy
+                        measurementOutput.absolute_heading = timeUpdateHeadingCopy
                         updateHeading = timeUpdateHeadingCopy
                     }
                 }
@@ -6057,6 +6062,7 @@ public class ServiceManager: Observation {
             
             measurementOutput.x = measurementOutputCorrected.1[0]
             measurementOutput.y = measurementOutputCorrected.1[1]
+            measurementOutput.absolute_heading = measurementOutputCorrected.1[2]
             updateHeading = measurementOutputCorrected.1[2]
             
             backKalmanParam()
