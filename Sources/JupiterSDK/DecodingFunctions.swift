@@ -49,12 +49,12 @@ public func decodeMock(json: String) -> JupiterMockResult {
 
 }
 
-public func decodeFLT(json: String) -> FineLocationTrackingListFromServer {
-    let result = FineLocationTrackingListFromServer.init()
+public func decodeFLT(json: String) -> FineLocationTrackingFromServer {
+    let result = FineLocationTrackingFromServer.init()
     let decoder = JSONDecoder()
     let jsonString = json
 
-    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(FineLocationTrackingListFromServer.self, from: data) {
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(FineLocationTrackingFromServer.self, from: data) {
         return decoded
     }
 

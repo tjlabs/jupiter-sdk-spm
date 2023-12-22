@@ -431,6 +431,7 @@ public func convertToValidSearchRange(inputRange: [Int], pathPointMinMax: [Doubl
 }
 
 public func extractSectionWithLeastChange(inputArray: [Double]) -> [Double] {
+    var resultArray = [Double]()
     guard inputArray.count > 7 else {
         return []
     }
@@ -440,19 +441,16 @@ public func extractSectionWithLeastChange(inputArray: [Double]) -> [Double] {
     for startIndex in 0..<(inputArray.count-6) {
         for endIndex in (startIndex+7)..<inputArray.count {
             let slice = Array(inputArray[startIndex...endIndex])
-            guard let minSliceValue = slice.min(), let maxSliceValue = slice.max() else {
-                continue
-            }
-
-            let currentDifference = abs(maxSliceValue - minSliceValue)
-            if currentDifference < 5 && slice.count > bestSliceEndIndex - bestSliceStartIndex {
+            let circularStd = circularStandardDeviation(for: slice)
+            if circularStd < 5 && slice.count > bestSliceEndIndex - bestSliceStartIndex {
                 bestSliceStartIndex = startIndex
                 bestSliceEndIndex = endIndex
             }
         }
     }
+    resultArray = Array(inputArray[bestSliceStartIndex...bestSliceEndIndex])
 
-    return Array(inputArray[bestSliceStartIndex...bestSliceEndIndex])
+    return resultArray
 }
 
 public func propagateUsingUvd(drBuffer: [UnitDRInfo], result: FineLocationTrackingFromServer) -> (Bool, [Double]) {

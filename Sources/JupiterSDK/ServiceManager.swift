@@ -3,13 +3,19 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.3.5"
+    public static let sdkVersion: String = "3.3.7"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
-            let result = input
+            var result = input
             if (result.x != 0 && result.y != 0 && result.building_name != "" && result.level_name != "") {
-//                let magHeading = self.jupiterLocationManager.getMagHeading()
+                let validInfo = self.checkSolutionValidity(reportFlag: self.pastReportFlag, reportTime: self.pastReportTime, isIndoor: result.isIndoor)
+                result.validity = validInfo.0
+                result.validity_flag = validInfo.1
+                if (result.ble_only_position) {
+                    result.absolute_heading = 0
+                }
+                
                 self.jupiterResult = result
                 observer.update(result: result)
                 
@@ -37,28 +43,11 @@ public class ServiceManager: Observation {
     }
     
     func reporting(input: Int) {
-//        switch (input) {
-//        case -1:
-//            self.isSolutionValid = false
-//            self.solutionMessage = "The state is abnormal"
-//        case 2:
-//            self.isSolutionValid = false
-//            self.solutionMessage = "BLE is off"
-//        case 3:
-//            self.isSolutionValid = false
-//            self.solutionMessage = "BLE only mode"
-//        case 5:
-//            self.isSolutionValid = false
-//            self.solutionMessage = "Newtwork is bad"
-//        case 6:
-//            self.isSolutionValid = false
-//            self.solutionMessage = "Newtwork connection lost"
-//        default:
-//            self.isSolutionValid = true
-//            self.solutionMessage = "Valid"
-//        }
-//        self.pastReportTime = getCurrentTimeInMillisecondsDouble()
-//        self.pastReportFlag = input
+        if (input != -2) {
+            self.pastReportTime = getCurrentTimeInMillisecondsDouble()
+            self.pastReportFlag = input
+        }
+        
         postReport(report: input)
         for observer in observers {
             observer.report(flag: input)
@@ -110,7 +99,6 @@ public class ServiceManager: Observation {
     var isPhaseBreakInSimulate: Bool = false
     var isStopReqeust: Bool = false
     var indexAfterSimulate: Int = 0
-    var posBufferForEndSimulate =  [[Double]]()
     var buildingsAndLevels = [String:[String]]()
     
     public var isLoadEnd = [String: [Bool]]()
@@ -1598,12 +1586,6 @@ public class ServiceManager: Observation {
                             result.x = correctResult.xyh[0]
                             result.y = correctResult.xyh[1]
                             result.absolute_heading = correctResult.xyh[2]
-//                            let correctResult = pathMatching(building: buildingName, level: levelName, x: result.x, y: result.y, heading: result.absolute_heading, tuXY: [0,0], isPast: isPast, HEADING_RANGE: HEADING_RANGE, isUseHeading: false, pathType: 1)
-//                            if (correctResult.isSuccess) {
-//                                result.x = correctResult.xyh[0]
-//                                result.y = correctResult.xyh[1]
-//                                result.absolute_heading = correctResult.xyh[2]
-//                            }
                         }
                     }
                 }
@@ -1724,8 +1706,6 @@ public class ServiceManager: Observation {
 //            self.bleAvg = ["TJ-00CB-000003E7-0000":-76.0] // Plan Group
 //            self.bleAvg = ["TJ-00CB-00000407-0000":-76.0] // Dabeeo 8F
             
-//            self.bleAvg = ["TJ-00CB-0000029C-0000": -95.2, "TJ-00CB-0000035A-0000": -77.5, "TJ-00CB-000003F5-0000": -96.0, "TJ-00CB-00000349-0000": -86.7, "TJ-00CB-000003A5-0000": -92.9, "TJ-00CB-00000348-0000": -90.25, "TJ-00CB-0000023B-0000": -93.0, "TJ-00CB-00000297-0000": -90.96, "TJ-00CB-00000354-0000": -93.67, "TJ-00CB-000002BA-0000": -97.0, "TJ-00CB-00000298-0000": -88.95, "TJ-00CB-00000299-0000": -94.08, "TJ-00CB-000002BB-0000": -88.0]
-            
             paramEstimator.refreshWardMinRssi(bleData: self.bleAvg)
             paramEstimator.refreshWardMaxRssi(bleData: self.bleAvg)
             let maxRssi = paramEstimator.getMaxRssi()
@@ -1774,7 +1754,8 @@ public class ServiceManager: Observation {
             paramEstimator.refreshAllEntranceWardRssi(allEntranceWards: self.allEntranceWards, bleData: self.bleAvg)
             let isSufficientRfdBuffer = rflowCorrelator.accumulateRfdBuffer(bleData: self.bleAvg)
             let isSufficientRfdVelocityBuffer = rflowCorrelator.accumulateRfdVelocityBuffer(bleData: self.bleAvg)
-            unitDRGenerator.setRflow(rflow: rflowCorrelator.getRflow(), rflowForVelocity: rflowCorrelator.getRflowForVelocityScale(), isSufficient: isSufficientRfdBuffer, isSufficientForVelocity: isSufficientRfdVelocityBuffer)
+            let isSufficientRfdAutoMode = rflowCorrelator.accumulateRfdAutoModeBuffer(bleData: self.bleAvg)
+            unitDRGenerator.setRflow(rflow: rflowCorrelator.getRflow(), rflowForVelocity: rflowCorrelator.getRflowForVelocityScale(), rflowForAutoMode: rflowCorrelator.getRflowForAutoMode(), isSufficient: isSufficientRfdBuffer, isSufficientForVelocity: isSufficientRfdVelocityBuffer, isSufficientForAutoMode: isSufficientRfdAutoMode)
             
             if (!self.bleAvg.isEmpty) {
                 self.timeBleOff = 0
@@ -1796,7 +1777,7 @@ public class ServiceManager: Observation {
                             if (statusCode != 200) {
                                 let localTime = getLocalTimeString()
                                 let log: String = localTime + " , (Jupiter) Record Error : RFD \(statusCode) // " + returnedString
-                                if (self.isIndoor) {
+                                if (self.isIndoor && self.isGetFirstResponse) {
                                     print(log)
                                     self.reporting(input: RFD_FLAG)
                                 }
@@ -1993,8 +1974,6 @@ public class ServiceManager: Observation {
                 if let bleAvgData = bleData {
                     numChannels = checkBleChannelNum(bleDict: bleAvgData)
                 }
-                makeTrajectoryInfo(unitDRInfo: self.unitDRInfo, uvdLength: curUnitDRLength, resultToReturn: self.resultToReturn, tuHeading: self.updateHeading, isPmSuccess: self.displayOutput.isPmSuccess, bleChannels: numChannels, mode: self.runMode)
-
                 
                 // Kalman Filter
                 let diffHeading = unitDRInfo.heading - preUnitHeading
@@ -2024,7 +2003,12 @@ public class ServiceManager: Observation {
                         self.outputResult = tuResult
                         self.flagPast = false
                     }
+                } else {
+                    self.timeUpdateResult[0] = self.outputResult.x
+                    self.timeUpdateResult[1] = self.outputResult.y
+                    self.timeUpdateResult[2] = self.outputResult.absolute_heading
                 }
+                makeTrajectoryInfo(unitDRInfo: self.unitDRInfo, uvdLength: curUnitDRLength, resultToReturn: self.resultToReturn, tuHeading: self.updateHeading, isPmSuccess: self.displayOutput.isPmSuccess, bleChannels: numChannels, mode: self.runMode)
                 
                 // Add
                 if (self.isStartSimulate) {
@@ -2124,7 +2108,7 @@ public class ServiceManager: Observation {
                         } else {
                             let localTime: String = getLocalTimeString()
                             let log: String = localTime + " , (Jupiter) Record Error : UVD \(statusCode) // " + returnedString
-                            if (self.isIndoor) {
+                            if (self.isIndoor && self.isGetFirstResponse) {
                                 print(log)
                                 self.reporting(input: UVD_FLAG)
                             }
@@ -2377,16 +2361,10 @@ public class ServiceManager: Observation {
                         self.userTrajectory.scc = resultToReturn.scc
                         self.userTrajectory.userBuilding = resultToReturn.building_name
                         self.userTrajectory.userLevel = resultToReturn.level_name
-                        if (self.isStartSimulate) {
-                            if (self.isActiveKf) {
-                                self.userTrajectory.userX = self.timeUpdateResult[0]
-                                self.userTrajectory.userY = self.timeUpdateResult[1]
-                                self.userTrajectory.userHeading = self.timeUpdateResult[2]
-                            } else {
-                                self.userTrajectory.userX = resultToReturn.x
-                                self.userTrajectory.userY = resultToReturn.y
-                                self.userTrajectory.userHeading = resultToReturn.absolute_heading
-                            }
+                        if (self.isActiveKf) {
+                            self.userTrajectory.userX = self.timeUpdateResult[0]
+                            self.userTrajectory.userY = self.timeUpdateResult[1]
+                            self.userTrajectory.userHeading = self.timeUpdateResult[2]
                         } else {
                             self.userTrajectory.userX = resultToReturn.x
                             self.userTrajectory.userY = resultToReturn.y
@@ -2495,22 +2473,19 @@ public class ServiceManager: Observation {
                     uvHeading.append(compensateHeading(heading: value.heading))
                     uvRawHeading.append(value.heading)
                 }
+                let userBuilding = userTrajectory[userTrajectory.count-1].userBuilding
+                let userLevel = userTrajectory[userTrajectory.count-1].userLevel
+                let userX = userTrajectory[userTrajectory.count-1].userX
+                let userY = userTrajectory[userTrajectory.count-1].userY
+                let userH = userTrajectory[userTrajectory.count-1].userHeading
+                let RANGE = CONDITION
                 
                 if (phase < 4) {
-                    let userBuilding = userTrajectory[userTrajectory.count-1].userBuilding
-                    let userLevel = userTrajectory[userTrajectory.count-1].userLevel
-                    let userX = userTrajectory[userTrajectory.count-1].userX
-                    let userY = userTrajectory[userTrajectory.count-1].userY
-                    let userH = userTrajectory[userTrajectory.count-1].userHeading
-                    
-                    var RANGE = CONDITION
-                    
                     // Search Area
                     let areaMinMax: [Double] = [userX - RANGE, userY - RANGE, userX + RANGE, userY + RANGE]
                     let searchArea = getSearchCoordinates(areaMinMax: areaMinMax, interval: 1.0)
                     
                     let headInfo = userTrajectory[userTrajectory.count-1]
-                    let tailInfo = userTrajectory[0]
                     var xyFromHead: [Double] = [headInfo.userX, headInfo.userY]
                     
                     let headingCorrectionFromServer: Double = headInfo.userHeading - uvHeading[uvHeading.count-1]
@@ -2553,117 +2528,182 @@ public class ServiceManager: Observation {
                     displayOutput.searchType = 5
                     searchType = 5
                 } else {
+                    tailIndex = userTrajectory[0].index
                     let headInfo = userTrajectory[userTrajectory.count-1]
-                    let headInfoHeading = headInfo.userTuHeading
+                    let headInfoHeading = compensateHeading(heading: headInfo.userHeading)
                     
-                    let tailInfo = userTrajectory[0]
-                    let tailInfoHeading = tailInfo.userTuHeading
-                    
-                    let pastTraj = pastUserTrajectory
-                    let pastDirection = pastSearchDirection
-                    let pastDirectionCompensation = pastDirection - Int(round(pastTraj[0].heading))
-                    var pastTrajIndex = [Int]()
-                    var pastTrajHeading = [Int]()
-                    for i in 0..<pastTraj.count {
-                        pastTrajIndex.append(pastTraj[i].index)
-                        pastTrajHeading.append(Int(round(pastTraj[i].heading)) + pastDirectionCompensation)
+                    var hasMajorDirection: Bool = false
+                    var userStillStraight: Bool = false
+                    if (accumulatedValue < 10) {
+                        hasMajorDirection = false
+                    } else {
+                        let ppHeadings = getPathMatchingHeadings(building: userBuilding, level: userLevel, x: userX, y: userY, heading: userH, RANGE: RANGE, mode: mode)
+                        var searchHeadings: [Double] = []
+                        var headHeadings: [Double] = []
+                        let headingLeastChangeSection = extractSectionWithLeastChange(inputArray: uvRawHeading)
+                        if (headingLeastChangeSection.isEmpty) {
+                            hasMajorDirection = false
+                        } else {
+                            let headingForCompensation = uvRawHeading[uvRawHeading.count-1] - headingLeastChangeSection[headingLeastChangeSection.count-1]
+                            for ppHeading in ppHeadings {
+                                let headHeading = compensateHeading(heading: ppHeading + headingForCompensation)
+                                var diffHeading = abs(headInfoHeading - headHeading)
+                                if (diffHeading >= 270 && diffHeading < 360) {
+                                    diffHeading = 360 - diffHeading
+                                }
+                                headHeadings.append(diffHeading)
+                            }
+                            
+                            let minHeading = headHeadings.min() ?? 40
+                            if let minIndex = zip(headHeadings.indices, headHeadings).min(by: { $0.1 < $1.1 })?.0 {
+                                if (minHeading <= 20) {
+                                    let headingForCompensation = headingLeastChangeSection[0] - uvRawHeading[0]
+                                    let tailHeading = ppHeadings[minIndex] - headingForCompensation
+                                    searchHeadings.append(compensateHeading(heading: tailHeading - 5))
+                                    searchHeadings.append(compensateHeading(heading: tailHeading))
+                                    searchHeadings.append(compensateHeading(heading: tailHeading + 5))
+                                    resultDirection = searchHeadings.map { Int($0) }
+                                    let isStraight = isTrajectoryStraight(for: uvHeading, size: uvHeading.count, mode: mode, conditionPdr: NUM_STRAIGHT_INDEX_PDR, conditionDr: NUM_STRAIGHT_INDEX_DR)
+                                    
+                                    let headingCorrectionForTail: Double = tailHeading - uvHeading[0]
+                                    var headingFromTail = [Double] (repeating: 0, count: uvHeading.count)
+                                    var headingFromHead = [Double] (repeating: 0, count: uvHeading.count)
+                                    for i in 0..<uvHeading.count {
+                                        headingFromTail[i] = compensateHeading(heading: uvHeading[i] + headingCorrectionForTail)
+                                        headingFromHead[i] = compensateHeading(heading: headingFromTail[i] - 180)
+                                    }
+                                    let recentScc: Double = headInfo.scc
+                                    var xyFromHead: [Double] = [headInfo.userX, headInfo.userY]
+                                    
+                                    var trajectoryFromHead = [[Double]]()
+                                    trajectoryFromHead.append(xyFromHead)
+                                    for i in (1..<userTrajectory.count).reversed() {
+                                        let headAngle = headingFromHead[i]
+                                        xyFromHead[0] = xyFromHead[0] + userTrajectory[i].length*cos(headAngle*D2R)
+                                        xyFromHead[1] = xyFromHead[1] + userTrajectory[i].length*sin(headAngle*D2R)
+                                        trajectoryFromHead.append(xyFromHead)
+                                    }
+                                    
+                                    let xyMinMax: [Double] = getMinMaxValues(for: trajectoryFromHead)
+                                    
+                                    let headingStart = compensateHeading(heading: headingFromHead[headingFromHead.count-1]-180)
+                                    let headingEnd = compensateHeading(heading: headingFromHead[0]-180)
+                                    
+                                    let areaMinMax: [Double] = getSearchAreaMinMax(xyMinMax: xyMinMax, heading: [headingStart, headingEnd], recentScc: recentScc, searchType: isStraight, mode: mode)
+                                    let searchArea = getSearchCoordinates(areaMinMax: areaMinMax, interval: 1.0)
+                                    resultRange = areaMinMax.map { Int($0) }
+                                    hasMajorDirection = true
+                                    displayOutput.trajectoryStartCoord = [headInfo.userX, headInfo.userY]
+                                    displayOutput.userTrajectory = trajectoryFromHead
+                                    displayOutput.searchArea = searchArea
+                                    displayOutput.searchType = 4
+                                    searchType = 4
+                                } else {
+                                    hasMajorDirection = false
+                                    userStillStraight = true
+                                }
+                            } else {
+                                hasMajorDirection = false
+                            }
+                        }
                     }
                     
-                    tailIndex = userTrajectory[0].index
-                    let isStraight = isTrajectoryStraight(for: uvHeading, size: uvHeading.count, mode: mode, conditionPdr: NUM_STRAIGHT_INDEX_PDR, conditionDr: NUM_STRAIGHT_INDEX_DR)
-            
-                    let closestIndex = findClosestValueIndex(to: tailIndex, in: pastTrajIndex)
-                    if let headingIndex = closestIndex {
-//                        if (isStraight == 1) {
-//                            resultDirection = [pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5]
-//                        } else {
-//                            resultDirection = [pastTrajHeading[headingIndex]-10, pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5, pastTrajHeading[headingIndex]+10]
-//                        }
-                        resultDirection = [pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5]
-                        
-                        for i in 0..<resultDirection.count {
-                            resultDirection[i] = Int(compensateHeading(heading: Double(resultDirection[i])))
+                    if (!hasMajorDirection) {
+                        let pastTraj = pastUserTrajectory
+                        let pastDirection = pastSearchDirection
+                        let pastDirectionCompensation = pastDirection - Int(round(pastTraj[0].heading))
+                        var pastTrajIndex = [Int]()
+                        var pastTrajHeading = [Int]()
+                        for i in 0..<pastTraj.count {
+                            pastTrajIndex.append(pastTraj[i].index)
+                            pastTrajHeading.append(Int(round(pastTraj[i].heading)) + pastDirectionCompensation)
                         }
                         
-                        let headingCorrectionForTail: Double = Double(pastTrajHeading[headingIndex]) - uvHeading[0]
-                        var headingFromTail = [Double] (repeating: 0, count: uvHeading.count)
-                        for i in 0..<uvHeading.count {
-                            headingFromTail[i] = uvHeading[i] + headingCorrectionForTail
-                        }
-                        
-                        let recentScc: Double = headInfo.scc
-                        var xyFromHead: [Double] = [headInfo.userX, headInfo.userY]
-
-                        var headingFromHead: [Double] = headingFromTail
-                        for i in 0..<headingFromHead.count {
-                            headingFromHead[i] = compensateHeading(heading: headingFromHead[i] - 180)
-                        }
-
-                        var trajectoryFromHead = [[Double]]()
-                        trajectoryFromHead.append(xyFromHead)
-                        for i in (1..<userTrajectory.count).reversed() {
-                            let headAngle = headingFromHead[i]
-                            xyFromHead[0] = xyFromHead[0] + userTrajectory[i].length*cos(headAngle*D2R)
-                            xyFromHead[1] = xyFromHead[1] + userTrajectory[i].length*sin(headAngle*D2R)
+                        let isStraight = isTrajectoryStraight(for: uvHeading, size: uvHeading.count, mode: mode, conditionPdr: NUM_STRAIGHT_INDEX_PDR, conditionDr: NUM_STRAIGHT_INDEX_DR)
+                        let closestIndex = findClosestValueIndex(to: tailIndex, in: pastTrajIndex)
+                        if let headingIndex = closestIndex {
+                            resultDirection = [pastTrajHeading[headingIndex]-5, pastTrajHeading[headingIndex], pastTrajHeading[headingIndex]+5]
+                            for i in 0..<resultDirection.count {
+                                resultDirection[i] = Int(compensateHeading(heading: Double(resultDirection[i])))
+                            }
+                            
+                            let headingCorrectionForTail: Double = Double(pastTrajHeading[headingIndex]) - uvHeading[0]
+                            var headingFromTail = [Double] (repeating: 0, count: uvHeading.count)
+                            var headingFromHead = [Double] (repeating: 0, count: uvHeading.count)
+                            for i in 0..<uvHeading.count {
+                                headingFromTail[i] = uvHeading[i] + headingCorrectionForTail
+                                headingFromHead[i] = compensateHeading(heading: headingFromTail[i] - 180)
+                            }
+                            
+                            let recentScc: Double = headInfo.scc
+                            var xyFromHead: [Double] = [headInfo.userX, headInfo.userY]
+                            
+                            var trajectoryFromHead = [[Double]]()
                             trajectoryFromHead.append(xyFromHead)
-                        }
-
-                        let xyMinMax: [Double] = getMinMaxValues(for: trajectoryFromHead)
-
-                        let headingStart = compensateHeading(heading: headingFromHead[headingFromHead.count-1]-180)
-                        let headingEnd = compensateHeading(heading: headingFromHead[0]-180)
-
-                        let areaMinMax: [Double] = getSearchAreaMinMax(xyMinMax: xyMinMax, heading: [headingStart, headingEnd], recentScc: recentScc, searchType: isStraight, mode: mode)
-                        let searchArea = getSearchCoordinates(areaMinMax: areaMinMax, interval: 1.0)
-                        resultRange = areaMinMax.map { Int($0) }
-                        
-                        displayOutput.trajectoryStartCoord = [headInfo.userX, headInfo.userY]
-                        displayOutput.userTrajectory = trajectoryFromHead
-                        displayOutput.searchArea = searchArea
-                        displayOutput.searchType = 6
-                        searchType = 6
-                    } else {
-                        resultDirection = [pastDirection-10, pastDirection, pastDirection+10]
-                        
-                        let recentScc: Double = headInfo.scc
-                        var xyFromHead: [Double] = [headInfo.userX, headInfo.userY]
-                        
-                        var headingCorrectionForHead: Double = 0
-                        let headingCorrectionFromServer: Double = headInfo.userHeading - uvHeading[uvHeading.count-1]
-                        if (!isKf) {
-                            headingCorrectionForHead = 0
+                            for i in (1..<userTrajectory.count).reversed() {
+                                let headAngle = headingFromHead[i]
+                                xyFromHead[0] = xyFromHead[0] + userTrajectory[i].length*cos(headAngle*D2R)
+                                xyFromHead[1] = xyFromHead[1] + userTrajectory[i].length*sin(headAngle*D2R)
+                                trajectoryFromHead.append(xyFromHead)
+                            }
+                            
+                            let xyMinMax: [Double] = getMinMaxValues(for: trajectoryFromHead)
+                            
+                            let headingStart = compensateHeading(heading: headingFromHead[headingFromHead.count-1]-180)
+                            let headingEnd = compensateHeading(heading: headingFromHead[0]-180)
+                            
+                            let areaMinMax: [Double] = getSearchAreaMinMax(xyMinMax: xyMinMax, heading: [headingStart, headingEnd], recentScc: recentScc, searchType: isStraight, mode: mode)
+                            let searchArea = getSearchCoordinates(areaMinMax: areaMinMax, interval: 1.0)
+                            resultRange = areaMinMax.map { Int($0) }
+                            
+                            displayOutput.trajectoryStartCoord = [headInfo.userX, headInfo.userY]
+                            displayOutput.userTrajectory = trajectoryFromHead
+                            displayOutput.searchArea = searchArea
+                            displayOutput.searchType = 6
+                            searchType = 6
                         } else {
-                            headingCorrectionForHead = headInfoHeading - headInfo.userHeading
-                        }
-                        
-                        var headingFromHead = [Double] (repeating: 0, count: uvHeading.count)
-                        for i in 0..<uvHeading.count {
-                            headingFromHead[i] = compensateHeading(heading: (uvHeading[i] + headingCorrectionForHead) - 180 + headingCorrectionFromServer)
-                        }
+                            resultDirection = [pastDirection-10, pastDirection, pastDirection+10]
+                            
+                            let recentScc: Double = headInfo.scc
+                            var xyFromHead: [Double] = [headInfo.userX, headInfo.userY]
+                            
+                            var headingCorrectionForHead: Double = 0
+                            let headingCorrectionFromServer: Double = headInfo.userHeading - uvHeading[uvHeading.count-1]
+                            if (!isKf) {
+                                headingCorrectionForHead = 0
+                            } else {
+                                headingCorrectionForHead = headInfoHeading - headInfo.userHeading
+                            }
+                            
+                            var headingFromHead = [Double] (repeating: 0, count: uvHeading.count)
+                            for i in 0..<uvHeading.count {
+                                headingFromHead[i] = compensateHeading(heading: (uvHeading[i] + headingCorrectionForHead) - 180 + headingCorrectionFromServer)
+                            }
 
-                        var trajectoryFromHead = [[Double]]()
-                        trajectoryFromHead.append(xyFromHead)
-                        for i in (1..<userTrajectory.count).reversed() {
-                            let headAngle = headingFromHead[i]
-                            xyFromHead[0] = xyFromHead[0] + userTrajectory[i].length*cos(headAngle*D2R)
-                            xyFromHead[1] = xyFromHead[1] + userTrajectory[i].length*sin(headAngle*D2R)
+                            var trajectoryFromHead = [[Double]]()
                             trajectoryFromHead.append(xyFromHead)
-                        }
-                        
-                        let xyMinMax: [Double] = getMinMaxValues(for: trajectoryFromHead)
+                            for i in (1..<userTrajectory.count).reversed() {
+                                let headAngle = headingFromHead[i]
+                                xyFromHead[0] = xyFromHead[0] + userTrajectory[i].length*cos(headAngle*D2R)
+                                xyFromHead[1] = xyFromHead[1] + userTrajectory[i].length*sin(headAngle*D2R)
+                                trajectoryFromHead.append(xyFromHead)
+                            }
+                            
+                            let xyMinMax: [Double] = getMinMaxValues(for: trajectoryFromHead)
 
-                        let headingStart = compensateHeading(heading: headingFromHead[headingFromHead.count-1]-180)
-                        let headingEnd = compensateHeading(heading: headingFromHead[0]-180)
-                        
-                        let areaMinMax: [Double] = getSearchAreaMinMax(xyMinMax: xyMinMax, heading: [headingStart, headingEnd], recentScc: recentScc, searchType: isStraight, mode: mode)
-                        let searchArea = getSearchCoordinates(areaMinMax: areaMinMax, interval: 1.0)
-                        resultRange = areaMinMax.map { Int($0) }
-                        
-                        displayOutput.trajectoryStartCoord = [headInfo.userX, headInfo.userY]
-                        displayOutput.userTrajectory = trajectoryFromHead
-                        displayOutput.searchArea = searchArea
-                        displayOutput.searchType = 7
-                        searchType = 7
+                            let headingStart = compensateHeading(heading: headingFromHead[headingFromHead.count-1]-180)
+                            let headingEnd = compensateHeading(heading: headingFromHead[0]-180)
+                            
+                            let areaMinMax: [Double] = getSearchAreaMinMax(xyMinMax: xyMinMax, heading: [headingStart, headingEnd], recentScc: recentScc, searchType: isStraight, mode: mode)
+                            let searchArea = getSearchCoordinates(areaMinMax: areaMinMax, interval: 1.0)
+                            resultRange = areaMinMax.map { Int($0) }
+                            
+                            displayOutput.trajectoryStartCoord = [headInfo.userX, headInfo.userY]
+                            displayOutput.userTrajectory = trajectoryFromHead
+                            displayOutput.searchArea = searchArea
+                            displayOutput.searchType = 7
+                            searchType = 7
+                        }
                     }
                 }
                 
@@ -3199,7 +3239,7 @@ public class ServiceManager: Observation {
         return (resultRange, resultDirection, tailIndex, searchType, resultRatio)
     }
     
-    func isDrBufferStraight(drBuffer: [UnitDRInfo]) -> Bool {
+    func isDrBufferStraight(drBuffer: [UnitDRInfo], condition: Double) -> Bool {
         if (drBuffer.count >= DR_BUFFER_SIZE_FOR_STRAIGHT) {
             let firstIndex = drBuffer.count-DR_BUFFER_SIZE_FOR_STRAIGHT
             let firstHeading: Double = drBuffer[firstIndex].heading
@@ -3209,7 +3249,7 @@ public class ServiceManager: Observation {
                 diffHeading = 360 - diffHeading
             }
             
-            if (diffHeading < 20.0) {
+            if (diffHeading < condition) {
                 return true
             } else {
                 return false
@@ -5876,25 +5916,45 @@ public class ServiceManager: Observation {
                 timeUpdatePosition = timeUpdateCopy
             }
         } else {
-//            let isDrStraight: Bool = isDrBufferStraight(drBuffer: drBuffer)
-//            if ((self.unitDrInfoIndex%2) == 0 && !isDrStraight) {
-//                let drBufferForPathMatching = Array(drBuffer.suffix(DR_BUFFER_SIZE_FOR_STRAIGHT))
-//                let pathTrajMatchingResult = self.extendedPathTrajectoryMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, pastResult: self.jupiterResult, drBuffer: drBufferForPathMatching, HEADING_RANGE: HEADING_RANGE, pathType: 0, mode: self.runMode)
-//                if (pathTrajMatchingResult.isSuccess) {
-//                    timeUpdatePosition.x = timeUpdatePosition.x*0.5 + pathTrajMatchingResult.xyd[0]*0.5
-//                    timeUpdatePosition.y = timeUpdatePosition.y*0.5 + pathTrajMatchingResult.xyd[1]*0.5
-//                    displayOutput.trajectoryPm = pathTrajMatchingResult.minTrajectory
-//                    displayOutput.trajectoryOg = pathTrajMatchingResult.minTrajectoryOriginal
-//                    let ratio: Double = self.calTrajectoryRatio(trajPm: pathTrajMatchingResult.minTrajectory, trajOg: pathTrajMatchingResult.minTrajectoryOriginal)
-//                    self.scCompensationArray = [ratio]
-//                } else {
-//                    displayOutput.trajectoryPm = [[0,0]]
-//                    displayOutput.trajectoryOg = [[0,0]]
-//                }
-//            } else {
-//                displayOutput.trajectoryPm = [[0,0]]
-//                displayOutput.trajectoryOg = [[0,0]]
-//            }
+            let isDrStraight: Bool = isDrBufferStraight(drBuffer: drBuffer, condition: 20.0)
+            if ((self.unitDrInfoIndex%4) == 0 && !isDrStraight) {
+                let drBufferForPathMatching = Array(drBuffer.suffix(DR_BUFFER_SIZE_FOR_STRAIGHT))
+                let pathTrajMatchingResult = extendedPathTrajectoryMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, pastResult: self.jupiterResult, drBuffer: drBufferForPathMatching, HEADING_RANGE: HEADING_RANGE, pathType: 0, mode: self.runMode)
+                if (pathTrajMatchingResult.isSuccess) {
+                    timeUpdatePosition.x = timeUpdatePosition.x*0.5 + pathTrajMatchingResult.xyd[0]*0.5
+                    timeUpdatePosition.y = timeUpdatePosition.y*0.5 + pathTrajMatchingResult.xyd[1]*0.5
+                    displayOutput.trajectoryPm = pathTrajMatchingResult.minTrajectory
+                    displayOutput.trajectoryOg = pathTrajMatchingResult.minTrajectoryOriginal
+                } else {
+                    displayOutput.trajectoryPm = [[0,0]]
+                    displayOutput.trajectoryOg = [[0,0]]
+                }
+            } else {
+                let isDrVeryStraight: Bool = isDrBufferStraight(drBuffer: drBuffer, condition: 10.0)
+                if (isDrVeryStraight) {
+                    var correctedTuCopy = (true, [timeUpdateCopy.x, timeUpdateCopy.y, timeUpdateCopy.heading, 1.0])
+                    let pathMatchingResult = self.pathMatching(building: timeUpdateOutput.building_name, level: levelName, x: timeUpdateCopy.x, y: timeUpdateCopy.y, heading: compensatedHeading, tuXY: [0, 0], isPast: false, HEADING_RANGE: HEADING_RANGE, isUseHeading: true, pathType: 0)
+
+                    correctedTuCopy.0 = pathMatchingResult.isSuccess
+                    correctedTuCopy.1 = pathMatchingResult.xyh
+                    correctedTuCopy.1[2] = compensateHeading(heading: correctedTuCopy.1[2])
+                    if (correctedTuCopy.0) {
+                        timeUpdateCopy.x = correctedTuCopy.1[0]
+                        timeUpdateCopy.y = correctedTuCopy.1[1]
+                        timeUpdateCopy.heading = correctedTuCopy.1[2]
+                        timeUpdatePosition = timeUpdateCopy
+                    } else {
+                        correctedTuCopy.0 = pathMatchingResult.0
+                        correctedTuCopy.1 = pathMatchingResult.1
+
+                        timeUpdateCopy.x = correctedTuCopy.1[0]
+                        timeUpdateCopy.y = correctedTuCopy.1[1]
+                        timeUpdatePosition = timeUpdateCopy
+                    }
+                }
+                displayOutput.trajectoryPm = [[0,0]]
+                displayOutput.trajectoryOg = [[0,0]]
+            }
         }
         
         kalmanP += kalmanQ
@@ -6126,5 +6186,185 @@ public class ServiceManager: Observation {
         }
         
         return (isInNetworkBadEntrance, entrance)
+    }
+    
+    func checkSolutionValidity(reportFlag: Int, reportTime: Double, isIndoor: Bool) -> (Bool, Int, String) {
+        var isValid: Bool = false
+        var validFlag: Int = 0
+        var validMessage: String = "Valid"
+        let currentTime = getCurrentTimeInMillisecondsDouble()
+        
+        if (isIndoor) {
+            let diffTime = (currentTime - reportTime)*1e-3
+            if (NetworkCheck.shared.isConnectedToInternet()) {
+                switch (reportFlag) {
+                case -1:
+                    isValid = true
+                    validFlag = VALID_SOLUTION
+                    validMessage = "Valid"
+                case 2:
+                    // 1. 시간 체크
+                    // 2. 3초 지났으면 BLE 꺼진거 체크
+                    // 3. BLE 여전히 꺼져 있으며 pastReportTime 값 업데이트
+                    // 4. 아니면 valid하다고 바꿈
+                    if (diffTime > 3) {
+                        if (bleManager.bluetoothReady) {
+                            isValid = true
+                            validFlag = VALID_SOLUTION
+                            validMessage = "Valid"
+                            self.pastReportFlag = -1
+                        } else {
+                            validFlag = INVALID_BLE
+                            validMessage = "BLE is off"
+                            self.pastReportTime = currentTime
+                        }
+                    } else {
+                        validFlag = INVALID_BLE
+                        validMessage = "BLE is off"
+                    }
+                case 3:
+                    validFlag = INVALID_VENUS
+                    validMessage = "Providing BLE only mode solution"
+                case 4:
+                    // 1. 시간 체크
+                    // 2. 3초 지났으면 Valid로 수정
+                    if (diffTime > 3) {
+                        isValid = true
+                        validFlag = VALID_SOLUTION
+                        validMessage = "Valid"
+                        self.pastReportFlag = -1
+                    } else {
+                        validFlag = RECOVERING_SOLUTION
+                        validMessage = "Recently start to provide jupiter mode solution"
+                    }
+                case 5:
+                    // 1. 시간 체크
+                    // 2. 10초 지났으면 Valid로 수정
+                    if (diffTime > 5) {
+                        if (self.networkCount > 1) {
+                            validFlag = INVALID_NETWORK
+                            validMessage = "Newtwork status is bad"
+                        } else {
+                            isValid = true
+                            validFlag = VALID_SOLUTION
+                            validMessage = "Valid"
+                            self.pastReportFlag = -1
+                        }
+                    } else {
+                        validFlag = INVALID_NETWORK
+                        validMessage = "Newtwork status is bad"
+                    }
+                case 6:
+                    // 1. 시간 체크
+                    // 2. 3초 지났으면 네트워크 끊긴거 체크
+                    // 3. 네트워크 여전히 꺼져 있으며 pastReportTime 값 업데이트
+                    // 4. 아니면 valid하다고 바꿈
+                    if (diffTime > 3) {
+                        if (NetworkCheck.shared.isConnectedToInternet()) {
+                            isValid = true
+                            validFlag = VALID_SOLUTION
+                            validMessage = "Valid"
+                            self.pastReportFlag = -1
+                        } else {
+                            validFlag = INVALID_NETWORK
+                            validMessage = "Newtwork connection lost"
+                            self.pastReportTime = currentTime
+                        }
+                    } else {
+                        validFlag = INVALID_NETWORK
+                        validMessage = "Newtwork connection lost"
+                    }
+                case 7:
+                    validFlag = INVALID_STATE
+                    validMessage = "Solution in background is invalid"
+                case 8:
+                    // 1. 시간 체크
+                    // 2. 3초 지났으면 Valid로 수정
+                    if (bleManager.bluetoothReady) {
+                        if (diffTime > 3) {
+                            isValid = true
+                            validFlag = VALID_SOLUTION
+                            validMessage = "Valid"
+                            self.pastReportFlag = -1
+                        } else {
+                            validFlag = RECOVERING_SOLUTION
+                            validMessage = "Recently in foreground"
+                        }
+                    } else {
+                        validFlag = INVALID_BLE
+                        validMessage = "BLE is off"
+                        self.pastReportFlag = 2
+                        self.pastReportTime = currentTime
+                    }
+                case 9:
+                    if (bleManager.bluetoothReady) {
+                        if (diffTime > 5) {
+                            isValid = true
+                            validFlag = VALID_SOLUTION
+                            validMessage = "Valid"
+                            self.pastReportFlag = -1
+                        } else {
+                            validFlag = RECOVERING_SOLUTION
+                            validMessage = "Recently BLE is on"
+                        }
+                    } else {
+                        validFlag = INVALID_BLE
+                        validMessage = "BLE is off"
+                        self.pastReportFlag = 2
+                        self.pastReportTime = currentTime
+                    }
+                case 11:
+                    // BLE_SCAN_STOP
+                    if (bleManager.bluetoothReady) {
+                        if (diffTime > 5) {
+                            isValid = true
+                            validFlag = VALID_SOLUTION
+                            validMessage = "Valid"
+                            self.pastReportFlag = -1
+                        } else {
+                            validFlag = INVALID_BLE
+                            validMessage = "BLE scanning has problem"
+                        }
+                    } else {
+                        validFlag = INVALID_BLE
+                        validMessage = "BLE is off"
+                        self.pastReportFlag = 2
+                        self.pastReportTime = currentTime
+                    }
+                case 12:
+                    // BLE_ERROR_FLAG
+                    if (bleManager.bluetoothReady) {
+                        if (diffTime > 5) {
+                            isValid = true
+                            validFlag = VALID_SOLUTION
+                            validMessage = "Valid"
+                            self.pastReportFlag = -1
+                        } else {
+                            validFlag = INVALID_BLE
+                            validMessage = "BLE trimming has problem"
+                        }
+                    } else {
+                        validFlag = INVALID_BLE
+                        validMessage = "BLE is off"
+                        self.pastReportFlag = 2
+                        self.pastReportTime = currentTime
+                    }
+                default:
+                    isValid = true
+                    validFlag = VALID_SOLUTION
+                    validMessage = "Valid"
+                }
+            } else {
+                validFlag = INVALID_NETWORK
+                validMessage = "Newtwork connection lost"
+                self.pastReportFlag = 6
+                self.pastReportTime = currentTime
+            }
+        } else {
+            validFlag = INVALID_OUTDOOR
+            validMessage = "Solution in outdoor is invalid"
+        }
+        
+        return (isValid, validFlag, validMessage)
     }
 }
