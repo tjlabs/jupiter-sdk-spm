@@ -187,3 +187,28 @@ public func getLastScannedEntranceOuterWardTime(bleAvg: [String: Double], entran
     
     return (isScanned, scannedTime)
 }
+
+public func findNetworkBadEntrance(bleAvg: [String: Double]) -> (Bool, FineLocationTrackingFromServer) {
+    var isInNetworkBadEntrance: Bool = false
+    var entrance = FineLocationTrackingFromServer()
+    
+    let networkBadEntranceWards = ["TJ-00CB-00000386-0000"]
+    for (key, value) in bleAvg {
+        if networkBadEntranceWards.contains(key) {
+            let rssi = value
+            if (rssi >= -82.0) {
+                isInNetworkBadEntrance = true
+                
+                entrance.building_name = "COEX"
+                entrance.level_name = "B0"
+                entrance.x = 270
+                entrance.y = 10
+                entrance.absolute_heading = 270
+                
+                return (isInNetworkBadEntrance, entrance)
+            }
+        }
+    }
+    
+    return (isInNetworkBadEntrance, entrance)
+}

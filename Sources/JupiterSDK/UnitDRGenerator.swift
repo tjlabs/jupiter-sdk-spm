@@ -22,10 +22,8 @@ public class UnitDRGenerator: NSObject {
     var drQueue = LinkedList<DistanceInfo>()
     var autoMode: Int = 0
     var lastModeChangedTime: Double = 0
-    var lastStepChangedTime: Double = 0
     var lastHighRfSccTime: Double = 0
     var isPdrMode: Bool = false
-    var trackIsPdrMode: Bool = true
     
     var normalStepTime: Double = 0
     var unitIndexAuto = 0
@@ -36,11 +34,8 @@ public class UnitDRGenerator: NSObject {
     public var isEnteranceLevel: Bool = false
     public var rflow: Double = 0
     public var rflowForVelocity: Double = 0
-    public var rflowForAutoMode: Double = 0
-    
     public var isSufficientRfdBuffer: Bool = false
     public var isSufficientRfdVelocityBuffer: Bool = false
-    public var isSufficientRfdAutoMode: Bool = false
     
     public func setMode(mode: String) {
         unitMode = mode
@@ -103,7 +98,7 @@ public class UnitDRGenerator: NSObject {
             return UnitDRInfo(index: unitDistanceDr.index, length: unitDistanceDr.length, heading: heading, velocity: unitDistanceDr.velocity, lookingFlag: unitStatus, isIndexChanged: unitDistanceDr.isIndexChanged, autoMode: 0)
         case MODE_AUTO:
             pdrDistanceEstimator.isAutoMode(autoMode: true)
-//            pdrDistanceEstimator.normalStepCountSet(normalStepCountSet: MODE_AUTO_NORMAL_STEP_COUNT_SET)
+            pdrDistanceEstimator.normalStepCountSet(normalStepCountSet: MODE_AUTO_NORMAL_STEP_COUNT_SET)
             unitDistancePdr = pdrDistanceEstimator.estimateDistanceInfo(time: currentTime, sensorData: sensorData)
             unitDistanceDr = drDistanceEstimator.estimateDistanceInfo(time: currentTime, sensorData: sensorData)
             
@@ -113,27 +108,22 @@ public class UnitDRGenerator: NSObject {
                 }
             }
             
-            let isNormalStep = pdrDistanceEstimator.normalStepCountFlag
-            if (currentTime - lastModeChangedTime >= 10*1000) {
+            var isNormalStep = pdrDistanceEstimator.normalStepCountFlag
+            if (currentTime - lastModeChangedTime >= 5*1000) {
                 if (!self.isPdrMode && isNormalStep) {
-                    // 현재 DR 모드
-                    if (isNormalStep) {
-                        self.isPdrMode = true
-                        self.lastModeChangedTime = currentTime
-                    }
+                    // 현재 DR Mode인데 Normal Step 20회 검출 -> PDR로 전환
+                    self.isPdrMode = true
+                    self.lastModeChangedTime = currentTime
                 } else {
-                    // 현재 PDR 모드
-                    let diffTime = currentTime - self.lastStepChangedTime
-                    if (self.isSufficientRfdAutoMode && diffTime >= 10*1000) {
-                        if (self.rflowForAutoMode < 0.1) {
-                            self.isPdrMode = false
-                            self.lastModeChangedTime = currentTime
-                        }
-                    } else if (self.isSufficientRfdAutoMode) {
-                        if (self.rflowForAutoMode < 0.065) {
-                            self.isPdrMode = false
-                            self.lastModeChangedTime = currentTime
-                        }
+                    // 현재 PDR Mode
+                    if (self.rflow < RF_SC_THRESHOLD_PDR && self.isSufficientRfdBuffer) {
+                        // RF SCC가 낮은 경우 -> DR 모드로 전환
+                        self.isPdrMode = false
+                        self.lastModeChangedTime = currentTime
+                    } else if (currentTime - self.lastHighRfSccTime > 10*1000) {
+                        // RF SCC가 낮은 상황이 10초 이상 나오는 경우 -> DR 모드로 전환
+                        self.isPdrMode = false
+                        self.lastModeChangedTime = currentTime
                     }
                 }
                 
@@ -146,7 +136,6 @@ public class UnitDRGenerator: NSObject {
             if (self.isPdrMode) {
                 // PDR 가능 영역
                 if (unitDistancePdr.isIndexChanged) {
-                    self.lastStepChangedTime = currentTime
                     unitIndexAuto += 1
                 }
                 unitDistanceAuto = unitDistancePdr
@@ -160,17 +149,7 @@ public class UnitDRGenerator: NSObject {
                 }
                 self.autoMode = 1
             }
-            
-            if (self.isPdrMode != self.trackIsPdrMode) {
-                if (self.autoMode == 0) {
-                    pdrDistanceEstimator.setModeDrToPdr(isModeDrToPdr: true)
-                    pdrDistanceEstimator.normalStepCountSet(normalStepCountSet: NORMAL_STEP_LOSS_CHECK_SIZE-1)
-                } else {
-                    pdrDistanceEstimator.setModeDrToPdr(isModeDrToPdr: false)
-                    pdrDistanceEstimator.normalStepCountSet(normalStepCountSet: MODE_AUTO_NORMAL_STEP_COUNT_SET)
-                }
-            }
-            self.trackIsPdrMode = self.isPdrMode
+            // ------------------------------- Add ------------------------------- //
             
             var sensorAtt = sensorData.att
             if (sensorAtt[0].isNaN) {
@@ -188,7 +167,7 @@ public class UnitDRGenerator: NSObject {
             curAttitudePdr = Attitude(Roll: sensorAtt[0], Pitch: sensorAtt[1], Yaw: sensorAtt[2])
             curAttitudeDr = unitAttitudeEstimator.estimateAtt(time: currentTime, acc: sensorData.acc, gyro: sensorData.gyro, rotMatrix: sensorData.rotationMatrix)
             
-            let headingPdr = HF.radian2degree(radian: curAttitudeDr.Yaw)
+            let headingPdr = HF.radian2degree(radian: curAttitudePdr.Yaw)
             let headingDr = HF.radian2degree(radian: curAttitudeDr.Yaw)
             
             let unitStatusPdr = unitStatusEstimator.estimateStatus(Attitude: curAttitudePdr, isIndexChanged: unitDistancePdr.isIndexChanged, unitMode: MODE_PDR)
@@ -238,15 +217,12 @@ public class UnitDRGenerator: NSObject {
         self.isEnteranceLevel = flag
     }
     
-    public func setRflow(rflow: Double, rflowForVelocity: Double, rflowForAutoMode: Double, isSufficient: Bool, isSufficientForVelocity: Bool, isSufficientForAutoMode: Bool) {
+    public func setRflow(rflow: Double, rflowForVelocity: Double, isSufficient: Bool, isSufficientForVelocity: Bool) {
         self.rflow = rflow
         self.rflowForVelocity = rflowForVelocity
-        self.rflowForAutoMode = rflowForAutoMode
-        
         self.isSufficientRfdBuffer = isSufficient
         self.isSufficientRfdVelocityBuffer = isSufficientForVelocity
-        self.isSufficientRfdAutoMode = isSufficientForAutoMode
         
-        self.drDistanceEstimator.setRflow(rflow: rflow, rflowForVelocity: rflowForVelocity, rflowForAutoMode: rflowForAutoMode, isSufficient: isSufficient, isSufficientForVelocity: isSufficientForVelocity, isSufficientForAutoMode: isSufficientForAutoMode)
+        self.drDistanceEstimator.setRflow(rflow: rflow, rflowForVelocity: rflowForVelocity, isSufficient: isSufficient, isSufficientForVelocity: isSufficientForVelocity)
     }
 }

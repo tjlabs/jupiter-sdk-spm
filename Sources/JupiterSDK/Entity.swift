@@ -28,7 +28,7 @@ struct Info: Codable {
     var operating_system: String
 }
 
-struct InfoResult: Codable {
+public struct InfoResult: Codable {
     var building_level: [[String]]
     var entrances: [Entrance]
     var standard_rss_list: [Int]
@@ -168,7 +168,6 @@ public struct MatchedTraj {
 
 public struct ServiceResult {
     public var isIndexChanged: Bool = false
-    
     public var indexTx: Int = 0
     public var indexRx: Int = 0
     public var length: Double = 0
@@ -176,8 +175,6 @@ public struct ServiceResult {
     public var heading: Double = 0
     public var scc: Double = 0
     public var phase: String = ""
-    public var bias: Int = 0
-    public var isConverged: Bool = false
     public var mode: String = ""
     public var isPmSuccess: Bool = false
     
@@ -385,8 +382,8 @@ public struct FineLocationTrackingResult: Codable {
     public var mode: String
     public var ble_only_position: Bool
     public var isIndoor: Bool
-    public var validity: Bool
-    public var validity_flag: Int
+//    public var validity: Bool
+//    public var message: String
     
     public init() {
         self.mobile_time = 0
@@ -403,8 +400,8 @@ public struct FineLocationTrackingResult: Codable {
         self.mode = ""
         self.ble_only_position = false
         self.isIndoor = false
-        self.validity = false
-        self.validity_flag = 0
+//        self.validity = true
+//        self.message = ""
     }
 }
 

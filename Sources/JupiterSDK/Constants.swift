@@ -104,14 +104,6 @@ let MODE_PDR = "pdr"
 let MODE_DR = "dr"
 let MODE_AUTO = "auto"
 
-let VALID_SOLUTION: Int = 1
-let RECOVERING_SOLUTION: Int = 2
-let INVALID_OUTDOOR: Int = 3
-let INVALID_VENUS: Int = 4
-let INVALID_BLE: Int = 5
-let INVALID_NETWORK: Int = 6
-let INVALID_STATE: Int = 7
-
 
 public func setRegion(regionName: String) {
     switch(regionName) {

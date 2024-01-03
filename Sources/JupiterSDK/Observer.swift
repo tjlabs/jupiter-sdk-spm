@@ -1,6 +1,7 @@
 import Foundation
 
 let START_FLAG: Int = -2
+let ABNORMAL_FLAG: Int = -1
 let OUTDOOR_FLAG: Int = 0
 let INDOOR_FLAG: Int = 1
 let BLE_OFF_FLAG: Int = 2
