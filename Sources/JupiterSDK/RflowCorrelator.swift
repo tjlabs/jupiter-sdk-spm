@@ -11,14 +11,23 @@ public class RflowCorrelator {
     let D_V = 15*2
     let T_V = 3*2
     
+    let D_AUTO = 5*2
+    let T_AUTO = 10*2
+    
     var rfdVelocityBufferLength = 36
     var rfdVelocityBuffer = [[String: Double]]()
     var rflowQueue = [Double]()
     var preSmoothedRflowForVelocity: Double = 0
     
+    var rfdAutoModeBufferLength = 30
+    var rfdAutoModeBuffer = [[String: Double]]()
+    var rflowForAutoModeQueue = [Double]()
+    var preSmoothedRflowForAutoMode: Double = 0
+    
     init() {
         self.rfdBufferLength = (self.D + self.T)
         self.rfdVelocityBufferLength = (self.D_V + self.T_V)
+        self.rfdAutoModeBufferLength = (self.D_AUTO + self.T_AUTO)
     }
     
     public func accumulateRfdBuffer(bleData: [String: Double]) -> Bool {
@@ -130,8 +139,110 @@ public class RflowCorrelator {
                     result = calcScc(value: avgValue)
                 }
             }
-//            self.updateRflowQueue(data: result)
-//            result = self.smoothRflowForVelocity(rflow: result)
+        }
+        
+        return result
+    }
+    
+    public func accumulateRfdAutoModeBuffer(bleData: [String: Double]) -> Bool {
+        var isSufficient: Bool = false
+        if (self.rfdAutoModeBuffer.count < self.rfdAutoModeBufferLength) {
+            if (self.rfdAutoModeBuffer.isEmpty) {
+                self.rfdAutoModeBuffer.append(["empty": -100.0])
+            } else {
+                self.rfdAutoModeBuffer.append(bleData)
+            }
+        } else {
+            isSufficient = true
+            self.rfdAutoModeBuffer.remove(at: 0)
+            if (self.rfdAutoModeBuffer.isEmpty) {
+                self.rfdAutoModeBuffer.append(["empty": -100.0])
+            } else {
+                self.rfdAutoModeBuffer.append(bleData)
+            }
+        }
+        
+        return isSufficient
+    }
+    
+    public func getRflowForAutoMode() -> Double {
+        var result: Double = 0
+        
+        if (self.rfdAutoModeBuffer.count >= self.rfdAutoModeBufferLength) {
+            let preRfdBuffer = sliceDictionaryArray(self.rfdAutoModeBuffer, startIndex: self.rfdAutoModeBufferLength-T_AUTO-D_AUTO, endIndex: self.rfdAutoModeBufferLength-T-1)
+            let curRfdBuffer = sliceDictionaryArray(self.rfdAutoModeBuffer, startIndex: self.rfdAutoModeBufferLength-D_AUTO, endIndex: self.rfdAutoModeBufferLength-1)
+            
+            var maxPreValues = [String: Double]()
+            var maxCurValues = [String: Double]()
+
+            for i in 0..<preRfdBuffer.count {
+                for (key, value) in preRfdBuffer[i] {
+                    if maxPreValues.keys.contains(key) {
+                        if let previousValue = maxPreValues[key] {
+                            if (value > previousValue) {
+                                maxPreValues[key] = value
+                            }
+                        }
+                    } else {
+                        maxPreValues[key] = value
+                    }
+                }
+            }
+            
+            for i in 0..<curRfdBuffer.count {
+                for (key, value) in curRfdBuffer[i] {
+                    if maxCurValues.keys.contains(key) {
+                        if let previousValue = maxCurValues[key] {
+                            if (value > previousValue) {
+                                maxCurValues[key] = value
+                            }
+                        }
+                    } else {
+                        maxCurValues[key] = value
+                    }
+                }
+            }
+            
+            let curSortedKeys = maxCurValues.keys.sorted { maxCurValues[$0]! > maxCurValues[$1]! }
+            let preSortedKeys = maxPreValues.keys.sorted { maxPreValues[$0]! > maxPreValues[$1]! }
+
+            var topRatioCount = Int(Double(curSortedKeys.count) * 0.7)
+
+            if topRatioCount == 0 {
+                topRatioCount = 1
+            }
+
+            let curTopKeys = Array(curSortedKeys.prefix(topRatioCount))
+            let preTopKeys = Array(preSortedKeys.prefix(topRatioCount))
+
+            let curNewMap = Dictionary(uniqueKeysWithValues: curTopKeys.map { key in
+                (key, maxCurValues[key]!)
+            })
+
+            let preNewMap = Dictionary(uniqueKeysWithValues: preTopKeys.map { key in
+                (key, maxPreValues[key]!)
+            })
+
+            
+            var sumDiffRssi: Double = 0
+            var validKeyCount: Int = 0
+            
+            for (key, value) in curNewMap {
+                let curRssi = value
+                let preRssi = preNewMap[key] ?? -130.0
+                sumDiffRssi += (curRssi - preRssi)*(curRssi - preRssi)
+                validKeyCount += 1
+            }
+            
+            if (validKeyCount != 0) {
+                let avgValue: Double = sqrt(sumDiffRssi/Double(validKeyCount))
+                if (avgValue != 0) {
+                    let rflowScc = calcScc(value: avgValue)
+//                    print(getLocalTimeString() + " , (Jupiter) Rflow : rflowScc = \(rflowScc) ")
+                    result = smoothRflowForAutoMode(rflow: rflowScc)
+//                    print(getLocalTimeString() + " , (Jupiter) Rflow : smoothedRflowScc = \(result) ")
+                }
+            }
         }
         
         return result
@@ -176,6 +287,25 @@ public class RflowCorrelator {
             smoothedRflow = movingAverage(preMvalue: self.preSmoothedRflowForVelocity, curValue: rflow, windowSize: self.rflowQueue.count)
         }
         preSmoothedRflowForVelocity = smoothedRflow
+        return smoothedRflow
+    }
+    
+    func updateRflowForAutoModeQueue(data: Double) {
+        if (self.rflowForAutoModeQueue.count >= 20) {
+            self.rflowForAutoModeQueue.remove(at: 0)
+        }
+        self.rflowForAutoModeQueue.append(data)
+    }
+    
+    func smoothRflowForAutoMode(rflow: Double) -> Double {
+        var smoothedRflow: Double = 1.0
+        if (self.rflowForAutoModeQueue.count == 1) {
+            smoothedRflow = rflow
+        } else {
+            smoothedRflow = movingAverage(preMvalue: self.preSmoothedRflowForAutoMode, curValue: rflow, windowSize: self.rflowForAutoModeQueue.count)
+        }
+        updateRflowForAutoModeQueue(data: smoothedRflow)
+        preSmoothedRflowForAutoMode = smoothedRflow
         return smoothedRflow
     }
 }

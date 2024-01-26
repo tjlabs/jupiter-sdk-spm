@@ -46,7 +46,12 @@ public func circularStandardDeviation(for array: [Double]) -> Double {
     
     let meanAngle = circularMean(for: array)
     let circularDifferences = array.map { angleDifference($0, meanAngle) }
-    let circularVariance = circularDifferences.reduce(0) { $0 + pow($1, 2) } / Double(circularDifferences.count)
+    
+    var powSum: Double = 0
+    for i in 0..<circularDifferences.count {
+        powSum += circularDifferences[i]*circularDifferences[i]
+    }
+    let circularVariance = powSum / Double(circularDifferences.count)
     
     return sqrt(circularVariance)
 }

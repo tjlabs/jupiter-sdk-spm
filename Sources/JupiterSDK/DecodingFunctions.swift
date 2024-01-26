@@ -62,6 +62,18 @@ public func decodeMock(json: String) -> JupiterMockResult {
 
 }
 
+public func decodeFLT(json: String) -> FineLocationTrackingListFromServer {
+    let result = FineLocationTrackingListFromServer.init()
+    let decoder = JSONDecoder()
+    let jsonString = json
+
+    if let data = jsonString.data(using: .utf8), let decoded = try? decoder.decode(FineLocationTrackingListFromServer.self, from: data) {
+        return decoded
+    }
+
+    return result
+}
+
 public func decodeOSA(json: String) -> OnSpotAuthorizationResult {
     let result = OnSpotAuthorizationResult.init()
     let decoder = JSONDecoder()
