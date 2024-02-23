@@ -3,7 +3,7 @@ import CoreMotion
 import UIKit
 
 public class ServiceManager: Observation {
-    public static let sdkVersion: String = "3.4.1"
+    public static let sdkVersion: String = "3.4.2"
     
     func tracking(input: FineLocationTrackingResult, isPast: Bool) {
         for observer in observers {
@@ -1081,6 +1081,7 @@ public class ServiceManager: Observation {
         self.timeUpdateResult = [0, 0, 0]
         
         self.isStartSimulate = false
+        unitDRGenerator.setIsStartSimulate(isStartSimulate: self.isStartSimulate)
         self.isPhaseBreakInSimulate = false
         self.currentEntrance = ""
         self.currentEntranceLength = 0
@@ -1089,7 +1090,6 @@ public class ServiceManager: Observation {
         self.detectNetworkBadEntrance = false
         self.isInNetworkBadEntrance = false
         self.isScaleConverged = false
-//        self.isBackground = false
     }
     
     func notificationCenterAddObserver() {
@@ -1114,6 +1114,7 @@ public class ServiceManager: Observation {
             self.measurementOutput = FineLocationTrackingFromServer()
             self.isVenusMode = true
             self.isStartSimulate = false
+            unitDRGenerator.setIsStartSimulate(isStartSimulate: self.isStartSimulate)
             self.reporting(input: VENUS_FLAG)
         }
     
@@ -1642,6 +1643,7 @@ public class ServiceManager: Observation {
                                         }
                                         self.currentEntranceLength = entranceResult.1
                                         self.isStartSimulate = true
+                                        unitDRGenerator.setIsStartSimulate(isStartSimulate: self.isStartSimulate)
                                     }
                                 }
                             }
@@ -1997,6 +1999,7 @@ public class ServiceManager: Observation {
                         if (self.isVenusMode) {
                             print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : Finish (BLE Only Mode)")
                             self.isStartSimulate = false
+                            unitDRGenerator.setIsStartSimulate(isStartSimulate: self.isStartSimulate)
                             self.isPhaseBreakInSimulate = false
                             self.detectNetworkBadEntrance = false
                             self.isInNetworkBadEntrance = false
@@ -2023,6 +2026,7 @@ public class ServiceManager: Observation {
                                     
                                     print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : Finish (Enter Phase4)")
                                     self.isStartSimulate = false
+                                    unitDRGenerator.setIsStartSimulate(isStartSimulate: self.isStartSimulate)
                                     self.isPhaseBreakInSimulate = false
                                     self.detectNetworkBadEntrance = false
                                     self.isInNetworkBadEntrance = false
@@ -2069,6 +2073,7 @@ public class ServiceManager: Observation {
                             print(getLocalTimeString() + " , (Jupiter) Entrance Simulator : Finish (End Simulating)")
                         }
                         self.isStartSimulate = false
+                        unitDRGenerator.setIsStartSimulate(isStartSimulate: self.isStartSimulate)
                         self.isPhaseBreakInSimulate = false
                         self.detectNetworkBadEntrance = false
                         self.isInNetworkBadEntrance = false
@@ -3762,6 +3767,7 @@ public class ServiceManager: Observation {
                                                 self.currentEntranceLength = entranceResult.1
                                                 self.isGetFirstResponse = true
                                                 self.isStartSimulate = true
+                                                unitDRGenerator.setIsStartSimulate(isStartSimulate: self.isStartSimulate)
                                             }
                                         }
                                     }

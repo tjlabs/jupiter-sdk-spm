@@ -53,6 +53,8 @@ public class DRDistanceEstimator: NSObject {
     public var isSufficientRfdVelocityBuffer: Bool = false
     public var isSufficientRfdAutoModeBuffer: Bool = false
     
+    public var isStartSimulate: Bool = false
+    
     public func argmax(array: [Float]) -> Int {
         let output1 = array[0]
         let output2 = array[1]
@@ -192,6 +194,10 @@ public class DRDistanceEstimator: NSObject {
             velocityInputScale = 0
         }
         
+        if (velocityInputScale == 0 && self.isStartSimulate) {
+            velocityInputScale = VELOCITY_MIN
+        }
+        
         let velocityMps = (velocityInputScale/3.6)*turnScale
         finalUnitResult.isIndexChanged = false
         finalUnitResult.velocity = velocityMps
@@ -289,5 +295,9 @@ public class DRDistanceEstimator: NSObject {
         }
         
         return scale
+    }
+    
+    public func setIsStartSimulate(isStartSimulate: Bool) {
+        self.isStartSimulate = isStartSimulate
     }
 }

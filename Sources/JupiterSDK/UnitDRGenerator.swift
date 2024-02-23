@@ -34,6 +34,7 @@ public class UnitDRGenerator: NSObject {
     var prePitch: Double = 0
     
     public var isEnteranceLevel: Bool = false
+    public var isStartSimulate: Bool = false
     public var rflow: Double = 0
     public var rflowForVelocity: Double = 0
     public var rflowForAutoMode: Double = 0
@@ -139,6 +140,11 @@ public class UnitDRGenerator: NSObject {
                 }
                 
                 if (self.isEnteranceLevel) {
+                    self.isPdrMode = false
+                    self.lastModeChangedTime = currentTime
+                }
+                
+                if (self.isStartSimulate) {
                     self.isPdrMode = false
                     self.lastModeChangedTime = currentTime
                 }
@@ -253,5 +259,10 @@ public class UnitDRGenerator: NSObject {
         self.isSufficientRfdAutoMode = isSufficientForAutoMode
         
         self.drDistanceEstimator.setRflow(rflow: rflow, rflowForVelocity: rflowForVelocity, rflowForAutoMode: rflowForAutoMode, isSufficient: isSufficient, isSufficientForVelocity: isSufficientForVelocity, isSufficientForAutoMode: isSufficientForAutoMode)
+    }
+    
+    public func setIsStartSimulate(isStartSimulate: Bool) {
+        self.isStartSimulate = isStartSimulate
+        self.drDistanceEstimator.setIsStartSimulate(isStartSimulate: isStartSimulate)
     }
 }
