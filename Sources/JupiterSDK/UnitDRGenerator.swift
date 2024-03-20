@@ -35,6 +35,7 @@ public class UnitDRGenerator: NSObject {
     
     public var isEnteranceLevel: Bool = false
     public var isStartSimulate: Bool = false
+    public var isBackground: Bool = false
     public var rflow: Double = 0
     public var rflowForVelocity: Double = 0
     public var rflowForAutoMode: Double = 0
@@ -115,6 +116,10 @@ public class UnitDRGenerator: NSObject {
                 }
             }
             
+            if (self.isBackground) {
+                self.lastModeChangedTime = currentTime
+            }
+            
             let isNormalStep = pdrDistanceEstimator.normalStepCountFlag
             if (currentTime - lastModeChangedTime >= 10*1000) {
                 if (!self.isPdrMode && isNormalStep) {
@@ -139,12 +144,7 @@ public class UnitDRGenerator: NSObject {
                     }
                 }
                 
-                if (self.isEnteranceLevel) {
-                    self.isPdrMode = false
-                    self.lastModeChangedTime = currentTime
-                }
-                
-                if (self.isStartSimulate) {
+                if (self.isEnteranceLevel || self.isStartSimulate) {
                     self.isPdrMode = false
                     self.lastModeChangedTime = currentTime
                 }
@@ -264,5 +264,9 @@ public class UnitDRGenerator: NSObject {
     public func setIsStartSimulate(isStartSimulate: Bool) {
         self.isStartSimulate = isStartSimulate
         self.drDistanceEstimator.setIsStartSimulate(isStartSimulate: isStartSimulate)
+    }
+    
+    public func setIsBackground(isBackground: Bool) {
+        self.isBackground = isBackground
     }
 }

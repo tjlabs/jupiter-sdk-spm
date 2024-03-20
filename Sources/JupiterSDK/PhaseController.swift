@@ -68,7 +68,7 @@ public class PhaseController {
         let scc = serverResult.scc
         
         if (building_name != "" && level_name != "") {
-            if (scc >= 0.65) {
+            if (scc >= 0.62) {
                 phase = 3
             } else {
                 phase = 1

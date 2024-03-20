@@ -121,6 +121,9 @@ public func setRegion(regionName: String) {
     case "Canada":
         REGION = "-mewcfgikga-pd.a.run.app"
         IMAGE_URL = "jupiter_image_can"
+    case "US(East)":
+        REGION = "-redh4tjnwq-ue.a.run.app"
+        IMAGE_URL = "jupiter_image_us_east"
     default:
         REGION = "-skrgq3jc5a-du.a.run.app"
         IMAGE_URL = "jupiter_image"
